@@ -45,4 +45,4 @@ ShowStmt = "SHOW", ( TableName | "TABLES" ), ";";
 
 TableName | FieldName = ( EnglishAlphabet | "_" ), [ { Digit | EnglishAlphabet | "_" } ];
 
-Value = Int | "\"", [ { AnyCharacter } ], "\"";
+Value = Int | "\"", [ { AnyCharacterExceptDoubleQuote } ], "\"";

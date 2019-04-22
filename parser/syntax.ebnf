@@ -43,6 +43,8 @@ CommitStmt = "COMMIT", ";"
 
 ShowStmt = "SHOW", ( TableName | "TABLES" ), ";";
 
+(* Case insensitive *)
 TableName | FieldName = ( EnglishAlphabet | "_" ), [ { Digit | EnglishAlphabet | "_" } ];
 
+(* Escape characters available in string literal: \", \n, \r, \t, \\ *)
 Value = Int | "\"", [ { AnyCharacterExceptDoubleQuote } ], "\"";

@@ -1,0 +1,48 @@
+(* Copyright 2019 Zhenhua Yang. All rights reserved. *)
+(* Licensed under the MIT License that can be *)
+(* found in the LICENSE file in the root directory. *)
+
+(* All whitespace between tokens are ignored. *)
+
+CreateTableStmt =
+        "CREATE", "TABLE", TableName, "(",
+            FieldName, ( "INT" | "STRING" ), [ "PRIMARY" | "UNIQUE" | "INDEX" ]
+            [ { ",", FieldName, ( "INT" | "STRING" ), [ "PRIMARY" | "UNIQUE" | "INDEX" ] } ],
+        ")", ";";
+
+DropTableStmt =
+        "DROP", "TABLE", TableName, ";";
+
+SelectStmt =
+        "SELECT", ( "*" | FieldName, [ { ",", FieldName } ]),
+            "FROM", TableName,
+            [ WhereClause ], ";";
+
+InsertStmt =
+        "INSERT", "INTO", TableName,
+            "VALUES", "(", Value, [ { ",", Value } ], ")", ";";
+
+DeleteStmt =
+        "DELETE", "FROM", TableName,
+            [ WhereClause ], ";";
+
+UpdateStmt =
+        "UPDATE", TableName,
+            "SET", FieldName, "=", Value, [ { ",", FieldName, "=", Value } ],
+            [ WhereClause ], ";";
+
+WhereClause =
+        "WHERE", ( FieldName, ( ">" | "=" | "<" | ">=" | "<=" | "!=" ), Value
+            | FieldName, "BETWEEN", Value, "AND", Value );
+
+BeginStmt = "BEGIN", ";";
+
+RollbackStmt = "ROLLBACK", ";";
+
+CommitStmt = "COMMIT", ";"
+
+ShowStmt = "SHOW", ( TableName | "TABLES" ), ";";
+
+TableName | FieldName = ( EnglishAlphabet | "_" ), [ { Digit | EnglishAlphabet | "_" } ];
+
+Value = Int | "\"", [ { AnyCharacter } ], "\"";

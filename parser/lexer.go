@@ -69,6 +69,7 @@ func (l *lexer) scanIntLiteral() (token, string) {
 	ch := l.read()
 	for isDigit(ch) {
 		buf.WriteRune(ch)
+		ch = l.read()
 	}
 	l.unread()
 
@@ -98,7 +99,7 @@ func (l *lexer) scanStringLiteral() (token, string, error) {
 	buf := new(bytes.Buffer)
 
 	ch := l.read()
-	for ch != '"' && ch != '\n' {
+	for ch != eofRune && ch != '"' && ch != '\n' {
 		if ch != '\\' {
 			buf.WriteRune(ch)
 		} else {
@@ -109,6 +110,7 @@ func (l *lexer) scanStringLiteral() (token, string, error) {
 			}
 			buf.WriteRune(ch)
 		}
+		ch = l.read()
 	}
 
 	if ch != '"' {

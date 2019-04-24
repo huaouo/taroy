@@ -26,7 +26,7 @@ func isWhitespace(ch rune) bool {
 }
 
 func isLetter(ch rune) bool {
-	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z';
+	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z'
 }
 
 func isDigit(ch rune) bool {
@@ -35,7 +35,7 @@ func isDigit(ch rune) bool {
 
 func isSymbol(ch rune) bool {
 	return ch == '<' || ch == '=' || ch == '>' || ch == '!' ||
-		ch == '*' || ch == ',' || ch == ';' || ch == '(' || ch == ')';
+		ch == '*' || ch == ',' || ch == ';' || ch == '(' || ch == ')'
 }
 
 type lexer struct {
@@ -121,6 +121,33 @@ func (l *lexer) scanStringLiteral() (token, string, error) {
 	return stringLiteral, buf.String(), nil
 }
 
+var keywordMap = map[string]token{
+	"create":   createId,
+	"drop":     dropId,
+	"select":   selectId,
+	"insert":   insertId,
+	"delete":   deleteId,
+	"update":   updateId,
+	"begin":    beginId,
+	"rollback": rollbackId,
+	"commit":   commitId,
+	"show":     showId,
+	"set":      setId,
+	"table":    tableId,
+	"tables":   tablesId,
+	"primary":  primaryId,
+	"unique":   uniqueId,
+	"index":    indexId,
+	"from":     fromId,
+	"into":     intoId,
+	"values":   valuesId,
+	"where":    whereId,
+	"between":  betweenId,
+	"and":      andId,
+	"int":      intId,
+	"string":   stringId,
+}
+
 func (l *lexer) scanIdentifierAndName() (token, string) {
 	buf := new(bytes.Buffer)
 	buf.WriteRune(l.read())
@@ -132,58 +159,11 @@ func (l *lexer) scanIdentifierAndName() (token, string) {
 	}
 	l.unread()
 
-	switch str := buf.String(); str {
-	case "create":
-		return createId, ""
-	case "drop":
-		return dropId, ""
-	case "select":
-		return selectId, ""
-	case "insert":
-		return insertId, ""
-	case "delete":
-		return deleteId, ""
-	case "update":
-		return updateId, ""
-	case "begin":
-		return beginId, ""
-	case "rollback":
-		return rollbackId, ""
-	case "commit":
-		return commitId, ""
-	case "show":
-		return showId, ""
-	case "set":
-		return setId, ""
-	case "table":
-		return tableId, ""
-	case "tables":
-		return tablesId, ""
-	case "primary":
-		return primaryId, ""
-	case "unique":
-		return uniqueId, ""
-	case "index":
-		return indexId, ""
-	case "from":
-		return fromId, ""
-	case "into":
-		return intoId, ""
-	case "values":
-		return valuesId, ""
-	case "where":
-		return whereId, ""
-	case "between":
-		return betweenId, ""
-	case "and":
-		return andId, ""
-	case "int":
-		return intId, ""
-	case "string":
-		return stringId, ""
-	default:
-		return name, str
+	str := buf.String()
+	if identifier, ok := keywordMap[str]; ok {
+		return identifier, ""
 	}
+	return name, str
 }
 
 func (l *lexer) scanSymbol() (token, error) {

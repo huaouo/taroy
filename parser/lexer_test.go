@@ -15,19 +15,19 @@ type tokenPair struct {
 	literal string
 }
 
-func testLegal(t *testing.T, sql string, expectedTokens []tokenPair) {
+func testLegalLexer(t *testing.T, sql string, expectedTokens []tokenPair) {
 	l := newLexer(strings.NewReader(sql))
 	for _, ex := range expectedTokens {
 		tok, lit, err := l.nextToken()
-		assert.Equal(t, ex.tok, tok, "token mismatch")
-		assert.Equal(t, ex.literal, lit, "literal mismatch")
-		assert.Nil(t, err, "unexpected error")
+		assert.Equal(t, ex.tok, tok)
+		assert.Equal(t, ex.literal, lit)
+		assert.Nil(t, err)
 	}
 	_, _, err := l.nextToken()
-	assert.Equal(t, err, EOF, "EOF mismatch")
+	assert.Equal(t, err, EOF)
 }
 
-func TestCreateTable(t *testing.T) {
+func TestCreateTableLexer(t *testing.T) {
 	expectedTokens := []tokenPair{
 		{createId, ""},
 		{tableId, ""},
@@ -47,7 +47,7 @@ func TestCreateTable(t *testing.T) {
 		{rParenthesis, ""},
 		{semicolon, ""},
 	}
-	testLegal(t, "create table _0aTabl9e2( aField int index, \n"+
+	testLegalLexer(t, "create table _0aTabl9e2( aField int index, \n"+
 		"bField strIng unique, \n"+
 		"cField inT primary\n"+
 		");   \n",
@@ -55,17 +55,17 @@ func TestCreateTable(t *testing.T) {
 	)
 }
 
-func TestDropTable(t *testing.T) {
+func TestDropTableLexer(t *testing.T) {
 	expectedTokens := []tokenPair{
 		{dropId, ""},
 		{tableId, ""},
 		{name, "test_table"},
 		{semicolon, ""},
 	}
-	testLegal(t, "   drop TaBLe  \n test_TablE ; \n", expectedTokens)
+	testLegalLexer(t, "   drop TaBLe  \n test_TablE ; \n", expectedTokens)
 }
 
-func TestSelect(t *testing.T) {
+func TestSelectLexer(t *testing.T) {
 	expectedTokens1 := []tokenPair{
 		{selectId, ""},
 		{name, "_crow"},
@@ -77,7 +77,7 @@ func TestSelect(t *testing.T) {
 		{intLiteral, "2"},
 		{semicolon, ""},
 	}
-	testLegal(t, " selEct _cRow from _cTable where _cRow <= 2 ;", expectedTokens1)
+	testLegalLexer(t, " selEct _cRow from _cTable where _cRow <= 2 ;", expectedTokens1)
 
 	expectedTokens2 := []tokenPair{
 		{selectId, ""},
@@ -90,7 +90,7 @@ func TestSelect(t *testing.T) {
 		{stringLiteral, "20"},
 		{semicolon, ""},
 	}
-	testLegal(t, "select _cRow from \n _cTable where _cRoW > \"20\" ;", expectedTokens2)
+	testLegalLexer(t, "select _cRow from \n _cTable where _cRoW > \"20\" ;", expectedTokens2)
 
 	expectedTokens3 := []tokenPair{
 		{selectId, ""},
@@ -105,10 +105,10 @@ func TestSelect(t *testing.T) {
 		{intLiteral, "2"},
 		{semicolon, ""},
 	}
-	testLegal(t, "select _cRow from _cTablE wHere _cRow between 1 and 2;", expectedTokens3)
+	testLegalLexer(t, "select _cRow from _cTablE wHere _cRow between 1 and 2;", expectedTokens3)
 }
 
-func TestInsert(t *testing.T) {
+func TestInsertLexer(t *testing.T) {
 	expectedTokens := []tokenPair{
 		{insertId, ""},
 		{intoId, ""},
@@ -123,10 +123,10 @@ func TestInsert(t *testing.T) {
 		{rParenthesis, ""},
 		{semicolon, ""},
 	}
-	testLegal(t, "InserT \n into \t My_T_able values( 1, 2,\n \"3\");", expectedTokens)
+	testLegalLexer(t, "InserT \n into \t My_T_able values( 1, 2,\n \"3\");", expectedTokens)
 }
 
-func TestDelete(t *testing.T) {
+func TestDeleteLexer(t *testing.T) {
 	expectedTokens := []tokenPair{
 		{deleteId, ""},
 		{fromId, ""},
@@ -137,10 +137,10 @@ func TestDelete(t *testing.T) {
 		{intLiteral, "1"},
 		{semicolon, ""},
 	}
-	testLegal(t, "deleTe from mytable where a != \n 1;", expectedTokens)
+	testLegalLexer(t, "deleTe from mytable where a != \n 1;", expectedTokens)
 }
 
-func TestUpdate(t *testing.T) {
+func TestUpdateLexer(t *testing.T) {
 	expectedTokens := []tokenPair{
 		{updateId, ""},
 		{name, "mytable"},
@@ -150,10 +150,10 @@ func TestUpdate(t *testing.T) {
 		{intLiteral, "1"},
 		{semicolon, ""},
 	}
-	testLegal(t, "update myTable set thos = 1;", expectedTokens)
+	testLegalLexer(t, "update myTable set thos = 1;", expectedTokens)
 }
 
-func TestShortStmts(t *testing.T) {
+func TestShortStmtsLexer(t *testing.T) {
 	expectedTokens := []tokenPair{
 		{beginId, ""},
 		{semicolon, ""},
@@ -168,30 +168,30 @@ func TestShortStmts(t *testing.T) {
 		{tablesId, ""},
 		{semicolon, ""},
 	}
-	testLegal(t, "begin;RollbacK;commit;show mydb;show TABLEs;", expectedTokens)
+	testLegalLexer(t, "begin;RollbacK;commit;show mydb;show TABLEs;", expectedTokens)
 }
 
-func TestEscapeCharacter(t *testing.T) {
+func TestEscapeCharacterLexer(t *testing.T) {
 	expectedTokens := []tokenPair{
 		{stringLiteral, "\n\r\t\\\""},
 	}
-	testLegal(t, "\"\\n\\r\\t\\\\\\\"\"", expectedTokens)
+	testLegalLexer(t, "\"\\n\\r\\t\\\\\\\"\"", expectedTokens)
 }
 
-func TestMissingQuote(t *testing.T) {
+func TestMissingQuoteLexer(t *testing.T) {
 	l := newLexer(strings.NewReader("\""))
 	_, _, err := l.nextToken()
-	assert.Equal(t, MissingTerminatingDoubleQuote, err, "fail in missing quote test")
+	assert.Equal(t, MissingTerminatingDoubleQuote, err)
 }
 
-func TestInvalidSymbol(t *testing.T) {
+func TestInvalidSymbolLexer(t *testing.T) {
 	l := newLexer(strings.NewReader("  ^"))
 	_, _, err := l.nextToken()
-	assert.Equal(t, InvalidSymbol, err, "fail in invalid symbol test")
+	assert.Equal(t, InvalidSymbol, err)
 }
 
-func TestInvalidEscapeCharacter(t *testing.T) {
+func TestInvalidEscapeCharacterLexer(t *testing.T) {
 	l := newLexer(strings.NewReader("\"\\k\""))
 	_, _, err := l.nextToken()
-	assert.Equal(t, InvalidEscapeCharacter, err, "fail in invalid escape character test")
+	assert.Equal(t, InvalidEscapeCharacter, err)
 }

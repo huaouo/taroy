@@ -56,7 +56,7 @@ func (p *Parser) parse() (ast.Stmts, error) {
 		}
 
 		if p.err != nil {
-			return nil, err
+			return nil, p.err
 		}
 
 		tok, _, err = p.l.nextToken()
@@ -81,7 +81,11 @@ func (p *Parser) expectToken(exTokens ...token) (matchedTok token, lit string) {
 
 	tok, realLit, err := p.l.nextToken()
 	if err != nil {
-		p.err = err
+		if err == EOF {
+			p.err = InvalidSyntax
+		} else {
+			p.err = err
+		}
 		return
 	}
 
@@ -157,14 +161,13 @@ func (p *Parser) parseDropStmt() {
 func (p *Parser) parseSelectStmt() {
 	selectStmt := ast.SelectStmt{}
 
-	_, _ = p.expectToken(selectId)
 	tok, lit := p.expectToken(name, star)
 	if tok == star {
 		lit = "*"
 	}
 	selectStmt.FieldNames = append(selectStmt.FieldNames, lit)
 
-	for {
+	for p.err == nil {
 		tok, _ = p.expectToken(comma, fromId)
 		if tok == fromId {
 			break
@@ -187,14 +190,13 @@ func (p *Parser) parseSelectStmt() {
 func (p *Parser) parseInsertStmt() {
 	insertStmt := ast.InsertStmt{}
 
-	_, _ = p.expectToken(insertId)
 	_, _ = p.expectToken(intoId)
 	_, insertStmt.TableName = p.expectToken(name)
 	_, _ = p.expectToken(valuesId)
 	_, _ = p.expectToken(lParenthesis)
 
 	insertStmt.Values = append(insertStmt.Values, p.parseLiteral())
-	for {
+	for p.err == nil {
 		tok, _ := p.expectToken(comma, rParenthesis)
 		if tok == comma {
 			insertStmt.Values = append(insertStmt.Values, p.parseLiteral())
@@ -254,7 +256,7 @@ func (p *Parser) parseUpdateStmt() {
 
 	haveWhereClause := false
 loop:
-	for {
+	for p.err == nil {
 		tok, _ := p.expectToken(comma, semicolon, whereId)
 		switch tok {
 		case comma:

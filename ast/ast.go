@@ -14,7 +14,8 @@ const (
 type FieldTag int
 
 const (
-	PRIMARY = iota
+	UNTAGGED = iota
+	PRIMARY
 	UNIQUE
 	INDEX
 )

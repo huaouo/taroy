@@ -1,0 +1,290 @@
+// Copyright 2019 Zhenhua Yang. All rights reserved.
+// Licensed under the MIT License that can be
+// found in the LICENSE file in the root directory.
+
+package parser
+
+import (
+	"github.com/huaouo/taroy/ast"
+	"github.com/stretchr/testify/assert"
+	"strings"
+	"testing"
+)
+
+func TestSelectParser(t *testing.T) {
+	stmts, err := Parse(
+		strings.NewReader(
+			"select * from test_table where col > 12;" +
+				"select *, a from test_table where b between \"12\" and \"14\";" +
+				"select a from test_table;"),
+	)
+	assert.Equal(t, nil, err)
+
+	expectedStmts := ast.Stmts{
+		ast.SelectStmt{
+			TableName:  "test_table",
+			FieldNames: []string{"*"},
+			Where: &ast.WhereClause{
+				FieldName: "col",
+				CmpOp:     ast.GT,
+				Value:     12,
+			},
+		},
+		ast.SelectStmt{
+			TableName:  "test_table",
+			FieldNames: []string{"*", "a"},
+			Where: &ast.WhereClause{
+				FieldName: "b",
+				CmpOp:     ast.BETWEEN,
+				Value:     "12",
+				ValueOpt:  "14",
+			},
+		},
+		ast.SelectStmt{
+			TableName:  "test_table",
+			FieldNames: []string{"a"},
+			Where:      nil,
+		},
+	}
+	assert.Equal(t, expectedStmts, stmts)
+
+	_, err = Parse(strings.NewReader("select hello;"))
+	assert.Equal(t, InvalidSyntax, err)
+
+	_, err = Parse(strings.NewReader("select from yu;"))
+	assert.Equal(t, InvalidSyntax, err)
+
+	_, err = Parse(strings.NewReader("select where a = 1;"))
+	assert.Equal(t, InvalidSyntax, err)
+
+	_, err = Parse(strings.NewReader("select a from b where a = ;"))
+	assert.Equal(t, InvalidSyntax, err)
+
+	_, err = Parse(strings.NewReader("select a from b where = 1;"))
+	assert.Equal(t, InvalidSyntax, err)
+
+	_, err = Parse(strings.NewReader("select a from b where 21;"))
+	assert.Equal(t, InvalidSyntax, err)
+
+	_, err = Parse(strings.NewReader("select a from b where c = 1"))
+	assert.Equal(t, InvalidSyntax, err)
+}
+
+func TestCreateTableParser(t *testing.T) {
+	stmts, err := Parse(
+		strings.NewReader(
+			"create table test_table (" +
+				"a int primary," +
+				"b string unique," +
+				"c int index," +
+				"d string" +
+				");" +
+
+				"create table next_table (" +
+				"a int" +
+				");" +
+
+				"create table third_table(" +
+				"a int primary" +
+				");",
+		),
+	)
+	assert.Equal(t, nil, err)
+
+	expectedStmts := ast.Stmts{
+		ast.CreateTableStmt{
+			TableName: "test_table",
+			Fields: []ast.Field{
+				{"a", ast.INT, ast.PRIMARY},
+				{"b", ast.STRING, ast.UNIQUE},
+				{"c", ast.INT, ast.INDEX},
+				{"d", ast.STRING, ast.UNTAGGED},
+			},
+		},
+		ast.CreateTableStmt{
+			TableName: "next_table",
+			Fields: []ast.Field{
+				{"a", ast.INT, ast.UNTAGGED},
+			},
+		},
+		ast.CreateTableStmt{
+			TableName: "third_table",
+			Fields: []ast.Field{
+				{"a", ast.INT, ast.PRIMARY},
+			},
+		},
+	}
+	assert.Equal(t, expectedStmts, stmts)
+
+	_, err = Parse(strings.NewReader("create table a ( b int primary c string);"))
+	assert.Equal(t, InvalidSyntax, err)
+
+	_, err = Parse(strings.NewReader("create aa (a int primary);"))
+	assert.Equal(t, InvalidSyntax, err)
+
+	_, err = Parse(strings.NewReader("create table mytable (int primary);"))
+	assert.Equal(t, InvalidSyntax, err)
+
+	_, err = Parse(strings.NewReader("create table mytable (afield );"))
+	assert.Equal(t, InvalidSyntax, err)
+
+	_, err = Parse(strings.NewReader("create table mytable (afield int,);"))
+	assert.Equal(t, InvalidSyntax, err)
+
+	_, err = Parse(strings.NewReader("create table mytable();"))
+	assert.Equal(t, InvalidSyntax, err)
+}
+
+func TestDropTableParser(t *testing.T) {
+	stmts, err := Parse(strings.NewReader("drop table table_name;"))
+	assert.Equal(t, nil, err)
+
+	expectedStmts := ast.Stmts{
+		ast.DropTableStmt{
+			TableName: "table_name",
+		},
+	}
+	assert.Equal(t, expectedStmts, stmts)
+
+	_, err = Parse(strings.NewReader("drop tables *;"))
+	assert.Equal(t, InvalidSyntax, err)
+
+	_, err = Parse(strings.NewReader("drop table;"))
+	assert.Equal(t, InvalidSyntax, err)
+}
+
+func TestInsertParser(t *testing.T) {
+	stmts, err := Parse(
+		strings.NewReader(
+			"insert into mytable values(1, \"2\");" +
+				"insert into mytable values(1);",
+		),
+	)
+	assert.Equal(t, nil, err)
+
+	expectedStmts := ast.Stmts{
+		ast.InsertStmt{
+			TableName: "mytable",
+			Values:    []interface{}{1, "2"},
+		},
+		ast.InsertStmt{
+			TableName: "mytable",
+			Values:    []interface{}{1},
+		},
+	}
+	assert.Equal(t, expectedStmts, stmts)
+
+	_, err = Parse(strings.NewReader("insert into ll values();"))
+	assert.Equal(t, InvalidSyntax, err)
+
+	_, err = Parse(strings.NewReader("insert into ll values (*);"))
+	assert.Equal(t, InvalidSyntax, err)
+}
+
+func TestDeleteParser(t *testing.T) {
+	stmts, err := Parse(
+		strings.NewReader(
+			"delete from mytable;" +
+				"delete from mytable where a = \"12\";",
+		),
+	)
+	assert.Equal(t, nil, err)
+
+	expectedStmts := ast.Stmts{
+		ast.DeleteStmt{
+			TableName: "mytable",
+			Where:     nil,
+		},
+		ast.DeleteStmt{
+			TableName: "mytable",
+			Where: &ast.WhereClause{
+				FieldName: "a",
+				CmpOp:     ast.EQ,
+				Value:     "12",
+			},
+		},
+	}
+	assert.Equal(t, expectedStmts, stmts)
+
+	_, err = Parse(strings.NewReader("delete from where a = 1;"))
+	assert.Equal(t, InvalidSyntax, err)
+}
+
+func TestUpdateParser(t *testing.T) {
+	stmts, err := Parse(
+		strings.NewReader(
+			"update mytable set a = 1, b = \"xmu\" where a != 12;" +
+				"update mytable set a = 1 where a != 12;" +
+				"update mytable set a = 1;",
+		),
+	)
+	assert.Equal(t, nil, err)
+
+	expectedStmts := ast.Stmts{
+		ast.UpdateStmt{
+			TableName: "mytable",
+			UpdatePairs: []ast.UpdatePair{
+				{"a", 1},
+				{"b", "xmu"},
+			},
+			Where: &ast.WhereClause{
+				FieldName: "a",
+				CmpOp:     ast.NE,
+				Value:     12,
+			},
+		},
+		ast.UpdateStmt{
+			TableName: "mytable",
+			UpdatePairs: []ast.UpdatePair{
+				{"a", 1},
+			},
+			Where: &ast.WhereClause{
+				FieldName: "a",
+				CmpOp:     ast.NE,
+				Value:     12,
+			},
+		},
+		ast.UpdateStmt{
+			TableName: "mytable",
+			UpdatePairs: []ast.UpdatePair{
+				{"a", 1},
+			},
+			Where: nil,
+		},
+	}
+	assert.Equal(t, expectedStmts, stmts)
+
+	_, err = Parse(strings.NewReader("update mytable set a = 2, where a = 1;"))
+	assert.Equal(t, InvalidSyntax, err)
+}
+
+func TestShowParser(t *testing.T) {
+	stmts, err := Parse(strings.NewReader("show tables;show mytable;"))
+	assert.Equal(t, nil, err)
+
+	expectedStmts := ast.Stmts{
+		ast.ShowStmt{
+			ShowTables: true,
+		},
+		ast.ShowStmt{
+			ShowTables: false,
+			TableName:  "mytable",
+		},
+	}
+	assert.Equal(t, expectedStmts, stmts)
+
+	_, err = Parse(strings.NewReader("show;"))
+	assert.Equal(t, InvalidSyntax, err)
+}
+
+func TestSimpleParser(t *testing.T) {
+	stmts, err := Parse(strings.NewReader("begin;rollback;commit;"))
+	assert.Equal(t, nil, err)
+
+	expectedStmts := ast.Stmts{
+		ast.BeginStmt{},
+		ast.RollbackStmt{},
+		ast.CommitStmt{},
+	}
+	assert.Equal(t, expectedStmts, stmts)
+}

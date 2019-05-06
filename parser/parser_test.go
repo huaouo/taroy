@@ -7,16 +7,14 @@ package parser
 import (
 	"github.com/huaouo/taroy/ast"
 	"github.com/stretchr/testify/assert"
-	"strings"
 	"testing"
 )
 
 func TestSelectParser(t *testing.T) {
 	stmts, err := Parse(
-		strings.NewReader(
-			"select * from test_table where col > 12;" +
-				"select *, a from test_table where b between \"12\" and \"14\";" +
-				"select a from test_table;"),
+		"select * from test_table where col > 12;" +
+			"select *, a from test_table where b between \"12\" and \"14\";" +
+			"select a from test_table;",
 	)
 	assert.Equal(t, nil, err)
 
@@ -48,46 +46,44 @@ func TestSelectParser(t *testing.T) {
 	}
 	assert.Equal(t, expectedStmts, stmts)
 
-	_, err = Parse(strings.NewReader("select hello;"))
+	_, err = Parse("select hello;")
 	assert.Equal(t, InvalidSyntax, err)
 
-	_, err = Parse(strings.NewReader("select from yu;"))
+	_, err = Parse("select from yu;")
 	assert.Equal(t, InvalidSyntax, err)
 
-	_, err = Parse(strings.NewReader("select where a = 1;"))
+	_, err = Parse("select where a = 1;")
 	assert.Equal(t, InvalidSyntax, err)
 
-	_, err = Parse(strings.NewReader("select a from b where a = ;"))
+	_, err = Parse("select a from b where a = ;")
 	assert.Equal(t, InvalidSyntax, err)
 
-	_, err = Parse(strings.NewReader("select a from b where = 1;"))
+	_, err = Parse("select a from b where = 1;")
 	assert.Equal(t, InvalidSyntax, err)
 
-	_, err = Parse(strings.NewReader("select a from b where 21;"))
+	_, err = Parse("select a from b where 21;")
 	assert.Equal(t, InvalidSyntax, err)
 
-	_, err = Parse(strings.NewReader("select a from b where c = 1"))
+	_, err = Parse("select a from b where c = 1")
 	assert.Equal(t, InvalidSyntax, err)
 }
 
 func TestCreateTableParser(t *testing.T) {
 	stmts, err := Parse(
-		strings.NewReader(
-			"create table test_table (" +
-				"a int primary," +
-				"b string unique," +
-				"c int index," +
-				"d string" +
-				");" +
+		"create table test_table (" +
+			"a int primary," +
+			"b string unique," +
+			"c int index," +
+			"d string" +
+			");" +
 
-				"create table next_table (" +
-				"a int" +
-				");" +
+			"create table next_table (" +
+			"a int" +
+			");" +
 
-				"create table third_table(" +
-				"a int primary" +
-				");",
-		),
+			"create table third_table(" +
+			"a int primary" +
+			");",
 	)
 	assert.Equal(t, nil, err)
 
@@ -116,27 +112,27 @@ func TestCreateTableParser(t *testing.T) {
 	}
 	assert.Equal(t, expectedStmts, stmts)
 
-	_, err = Parse(strings.NewReader("create table a ( b int primary c string);"))
+	_, err = Parse("create table a ( b int primary c string);")
 	assert.Equal(t, InvalidSyntax, err)
 
-	_, err = Parse(strings.NewReader("create aa (a int primary);"))
+	_, err = Parse("create aa (a int primary);")
 	assert.Equal(t, InvalidSyntax, err)
 
-	_, err = Parse(strings.NewReader("create table mytable (int primary);"))
+	_, err = Parse("create table mytable (int primary);")
 	assert.Equal(t, InvalidSyntax, err)
 
-	_, err = Parse(strings.NewReader("create table mytable (afield );"))
+	_, err = Parse("create table mytable (afield );")
 	assert.Equal(t, InvalidSyntax, err)
 
-	_, err = Parse(strings.NewReader("create table mytable (afield int,);"))
+	_, err = Parse("create table mytable (afield int,);")
 	assert.Equal(t, InvalidSyntax, err)
 
-	_, err = Parse(strings.NewReader("create table mytable();"))
+	_, err = Parse("create table mytable();")
 	assert.Equal(t, InvalidSyntax, err)
 }
 
 func TestDropTableParser(t *testing.T) {
-	stmts, err := Parse(strings.NewReader("drop table table_name;"))
+	stmts, err := Parse("drop table table_name;")
 	assert.Equal(t, nil, err)
 
 	expectedStmts := ast.Stmts{
@@ -146,19 +142,17 @@ func TestDropTableParser(t *testing.T) {
 	}
 	assert.Equal(t, expectedStmts, stmts)
 
-	_, err = Parse(strings.NewReader("drop tables *;"))
+	_, err = Parse("drop tables *;")
 	assert.Equal(t, InvalidSyntax, err)
 
-	_, err = Parse(strings.NewReader("drop table;"))
+	_, err = Parse("drop table;")
 	assert.Equal(t, InvalidSyntax, err)
 }
 
 func TestInsertParser(t *testing.T) {
 	stmts, err := Parse(
-		strings.NewReader(
-			"insert into mytable values(1, \"2\");" +
-				"insert into mytable values(1);",
-		),
+		"insert into mytable values(1, \"2\");" +
+			"insert into mytable values(1);",
 	)
 	assert.Equal(t, nil, err)
 
@@ -174,19 +168,17 @@ func TestInsertParser(t *testing.T) {
 	}
 	assert.Equal(t, expectedStmts, stmts)
 
-	_, err = Parse(strings.NewReader("insert into ll values();"))
+	_, err = Parse("insert into ll values();")
 	assert.Equal(t, InvalidSyntax, err)
 
-	_, err = Parse(strings.NewReader("insert into ll values (*);"))
+	_, err = Parse("insert into ll values (*);")
 	assert.Equal(t, InvalidSyntax, err)
 }
 
 func TestDeleteParser(t *testing.T) {
 	stmts, err := Parse(
-		strings.NewReader(
-			"delete from mytable;" +
-				"delete from mytable where a = \"12\";",
-		),
+		"delete from mytable;" +
+			"delete from mytable where a = \"12\";",
 	)
 	assert.Equal(t, nil, err)
 
@@ -206,17 +198,15 @@ func TestDeleteParser(t *testing.T) {
 	}
 	assert.Equal(t, expectedStmts, stmts)
 
-	_, err = Parse(strings.NewReader("delete from where a = 1;"))
+	_, err = Parse("delete from where a = 1;")
 	assert.Equal(t, InvalidSyntax, err)
 }
 
 func TestUpdateParser(t *testing.T) {
 	stmts, err := Parse(
-		strings.NewReader(
-			"update mytable set a = 1, b = \"xmu\" where a != 12;" +
-				"update mytable set a = 1 where a != 12;" +
-				"update mytable set a = 1;",
-		),
+		"update mytable set a = 1, b = \"xmu\" where a != 12;" +
+			"update mytable set a = 1 where a != 12;" +
+			"update mytable set a = 1;",
 	)
 	assert.Equal(t, nil, err)
 
@@ -254,12 +244,12 @@ func TestUpdateParser(t *testing.T) {
 	}
 	assert.Equal(t, expectedStmts, stmts)
 
-	_, err = Parse(strings.NewReader("update mytable set a = 2, where a = 1;"))
+	_, err = Parse("update mytable set a = 2, where a = 1;")
 	assert.Equal(t, InvalidSyntax, err)
 }
 
 func TestShowParser(t *testing.T) {
-	stmts, err := Parse(strings.NewReader("show tables;show mytable;"))
+	stmts, err := Parse("show tables;show mytable;")
 	assert.Equal(t, nil, err)
 
 	expectedStmts := ast.Stmts{
@@ -273,12 +263,12 @@ func TestShowParser(t *testing.T) {
 	}
 	assert.Equal(t, expectedStmts, stmts)
 
-	_, err = Parse(strings.NewReader("show;"))
+	_, err = Parse("show;")
 	assert.Equal(t, InvalidSyntax, err)
 }
 
 func TestSimpleParser(t *testing.T) {
-	stmts, err := Parse(strings.NewReader("begin;rollback;commit;"))
+	stmts, err := Parse("begin;rollback;commit;")
 	assert.Equal(t, nil, err)
 
 	expectedStmts := ast.Stmts{

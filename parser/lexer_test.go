@@ -6,7 +6,6 @@ package parser
 
 import (
 	"github.com/stretchr/testify/assert"
-	"strings"
 	"testing"
 )
 
@@ -16,7 +15,7 @@ type tokenPair struct {
 }
 
 func testLegalLexer(t *testing.T, sql string, expectedTokens []tokenPair) {
-	l := newLexer(strings.NewReader(sql))
+	l := newLexer(sql)
 	for _, ex := range expectedTokens {
 		tok, lit, err := l.nextToken()
 		assert.Equal(t, ex.tok, tok)
@@ -179,19 +178,19 @@ func TestEscapeCharacterLexer(t *testing.T) {
 }
 
 func TestMissingQuoteLexer(t *testing.T) {
-	l := newLexer(strings.NewReader("\""))
+	l := newLexer("\"")
 	_, _, err := l.nextToken()
 	assert.Equal(t, MissingTerminatingDoubleQuote, err)
 }
 
 func TestInvalidSymbolLexer(t *testing.T) {
-	l := newLexer(strings.NewReader("  ^"))
+	l := newLexer("  ^")
 	_, _, err := l.nextToken()
 	assert.Equal(t, InvalidSymbol, err)
 }
 
 func TestInvalidEscapeCharacterLexer(t *testing.T) {
-	l := newLexer(strings.NewReader("\"\\k\""))
+	l := newLexer("\"\\k\"")
 	_, _, err := l.nextToken()
 	assert.Equal(t, InvalidEscapeCharacter, err)
 }

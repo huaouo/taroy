@@ -7,7 +7,6 @@ package parser
 import (
 	"errors"
 	"github.com/huaouo/taroy/ast"
-	"io"
 	"sort"
 	"strconv"
 )
@@ -23,8 +22,8 @@ type Parser struct {
 	err   error
 }
 
-func newParser(r io.Reader) *Parser {
-	return &Parser{l: newLexer(r), stmts: []interface{}{}}
+func newParser(sql string) *Parser {
+	return &Parser{l: newLexer(sql), stmts: []interface{}{}}
 }
 
 func (p *Parser) parse() (ast.Stmts, error) {
@@ -68,8 +67,8 @@ func (p *Parser) parse() (ast.Stmts, error) {
 	return p.stmts, nil
 }
 
-func Parse(r io.Reader) (ast.Stmts, error) {
-	return newParser(r).parse()
+func Parse(sql string) (ast.Stmts, error) {
+	return newParser(sql).parse()
 }
 
 func (p *Parser) expectToken(exTokens ...token) (matchedTok token, lit string) {

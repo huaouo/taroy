@@ -8,7 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"io"
+	"strings"
 	"unicode"
 )
 
@@ -43,8 +43,8 @@ type lexer struct {
 	err error
 }
 
-func newLexer(r io.Reader) *lexer {
-	return &lexer{r: bufio.NewReader(r)}
+func newLexer(sql string) *lexer {
+	return &lexer{r: bufio.NewReader(strings.NewReader(sql))}
 }
 
 func (l *lexer) read() rune {

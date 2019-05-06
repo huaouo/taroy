@@ -6,8 +6,8 @@ syntax = "proto3";
 
 package rpc;
 
-service SQLServer {
-    rpc SendSQL (RawSQL) returns (ResultSet) {}
+service DBMS {
+    rpc Execute (RawSQL) returns (ResultSet) {}
 }
 
 message RawSQL {

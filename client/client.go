@@ -44,28 +44,31 @@ func clientLoop(ctx context.Context, c rpc.DBMSClient) bool {
 			_, _ = fmt.Fprintf(os.Stderr, "IO error: %v", err)
 		}
 
-		builder.WriteString(line)
-
-		// Escape characters shouldn't be splitted by line break
-		if line[len(line) - 1] == '\\' {
-			builder.WriteByte('\n')
+		if builder.Len() == 0 {
+			switch line {
+			case "":
+				return true
+			case ":q":
+				return false
+			}
 		}
+		builder.WriteString(line)
+		builder.WriteByte('\n')
 
-		if (builder.Len() == 2 && line == ":q") || line[len(line)-1] == ';' {
+		if len(line) != 0 && line[len(line)-1] == ';' {
 			break
 		}
 		fmt.Print("> ")
 	}
 
 	sql := builder.String()
-	if sql == ":q" {
-		return false
-	}
 
-	_, err := c.Execute(ctx, &rpc.RawSQL{Sql: sql})
+	resultSet, err := c.Execute(ctx, &rpc.RawSQL{Sql: sql})
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Execute error: %v\n", err)
 	}
-	fmt.Println("Send SQL Successfully!")
+	if resultSet != nil {
+		fmt.Println(resultSet.Message)
+	}
 	return true
 }

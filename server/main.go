@@ -32,6 +32,7 @@ func main() {
 	log.Printf("Start to listen on :%s (tcp)\n", *port)
 
 	s := grpc.NewServer()
+	defer s.Stop()
 	rpc.RegisterDBMSServer(s, &server{})
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v\n", err)

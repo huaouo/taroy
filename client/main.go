@@ -19,6 +19,8 @@ var port = flag.String("port", "1214", "server port (tcp)")
 var help = flag.Bool("help", false, "print help information")
 
 func main() {
+	defer fmt.Println("Bye!")
+
 	flag.Parse()
 	if *help {
 		_, _ = fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
@@ -33,13 +35,25 @@ func main() {
 	defer conn.Close()
 	c := rpc.NewDBMSClient(conn)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	defer func() {
+		select {
+		case <-ctx.Done():
+		default:
+			cancel()
+		}
+	}()
 
+	// Check connection
+	_, err = c.Execute(ctx, &rpc.RawSQL{})
+	if err != nil {
+		log.Fatalf("Cannot connect to server: %v\n", err)
+	}
+
+	go heartbeat(ctx, conn)
 	fmt.Println("Welcome to taroyDB! Type :q to exit.")
 	for {
 		if !clientLoop(ctx, c) {
 			break
 		}
 	}
-	fmt.Println("Bye!")
 }

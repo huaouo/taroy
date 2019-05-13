@@ -91,22 +91,22 @@ func TestCreateTableParser(t *testing.T) {
 		ast.CreateTableStmt{
 			TableName: "test_table",
 			Fields: []ast.Field{
-				{"a", ast.INT, ast.PRIMARY},
-				{"b", ast.STRING, ast.UNIQUE},
-				{"c", ast.INT, ast.INDEX},
-				{"d", ast.STRING, ast.UNTAGGED},
+				{FieldName: "a", FieldType: ast.INT, FieldTag: ast.PRIMARY},
+				{FieldName: "b", FieldType: ast.STRING, FieldTag: ast.UNIQUE},
+				{FieldName: "c", FieldType: ast.INT, FieldTag: ast.INDEX},
+				{FieldName: "d", FieldType: ast.STRING, FieldTag: ast.UNTAGGED},
 			},
 		},
 		ast.CreateTableStmt{
 			TableName: "next_table",
 			Fields: []ast.Field{
-				{"a", ast.INT, ast.UNTAGGED},
+				{FieldName: "a", FieldType: ast.INT, FieldTag: ast.UNTAGGED},
 			},
 		},
 		ast.CreateTableStmt{
 			TableName: "third_table",
 			Fields: []ast.Field{
-				{"a", ast.INT, ast.PRIMARY},
+				{FieldName: "a", FieldType: ast.INT, FieldTag: ast.PRIMARY},
 			},
 		},
 	}
@@ -214,8 +214,8 @@ func TestUpdateParser(t *testing.T) {
 		ast.UpdateStmt{
 			TableName: "mytable",
 			UpdatePairs: []ast.UpdatePair{
-				{"a", 1},
-				{"b", "xmu"},
+				{FieldName: "a", Value: 1},
+				{FieldName: "b", Value: "xmu"},
 			},
 			Where: &ast.WhereClause{
 				FieldName: "a",
@@ -226,7 +226,7 @@ func TestUpdateParser(t *testing.T) {
 		ast.UpdateStmt{
 			TableName: "mytable",
 			UpdatePairs: []ast.UpdatePair{
-				{"a", 1},
+				{FieldName: "a", Value: 1},
 			},
 			Where: &ast.WhereClause{
 				FieldName: "a",
@@ -237,7 +237,7 @@ func TestUpdateParser(t *testing.T) {
 		ast.UpdateStmt{
 			TableName: "mytable",
 			UpdatePairs: []ast.UpdatePair{
-				{"a", 1},
+				{FieldName: "a", Value: 1},
 			},
 			Where: nil,
 		},

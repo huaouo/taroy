@@ -18,7 +18,7 @@ func TestSelectParser(t *testing.T) {
 	)
 	assert.Equal(t, nil, err)
 
-	expectedStmts := ast.Stmts{
+	expectedStmts := &ast.Stmts{
 		ast.SelectStmt{
 			TableName:  "test_table",
 			FieldNames: []string{"*"},
@@ -87,7 +87,7 @@ func TestCreateTableParser(t *testing.T) {
 	)
 	assert.Equal(t, nil, err)
 
-	expectedStmts := ast.Stmts{
+	expectedStmts := &ast.Stmts{
 		ast.CreateTableStmt{
 			TableName: "test_table",
 			Fields: []ast.Field{
@@ -135,7 +135,7 @@ func TestDropTableParser(t *testing.T) {
 	stmts, err := Parse("drop table table_name;")
 	assert.Equal(t, nil, err)
 
-	expectedStmts := ast.Stmts{
+	expectedStmts := &ast.Stmts{
 		ast.DropTableStmt{
 			TableName: "table_name",
 		},
@@ -156,7 +156,7 @@ func TestInsertParser(t *testing.T) {
 	)
 	assert.Equal(t, nil, err)
 
-	expectedStmts := ast.Stmts{
+	expectedStmts := &ast.Stmts{
 		ast.InsertStmt{
 			TableName: "mytable",
 			Values:    []interface{}{1, "2"},
@@ -182,7 +182,7 @@ func TestDeleteParser(t *testing.T) {
 	)
 	assert.Equal(t, nil, err)
 
-	expectedStmts := ast.Stmts{
+	expectedStmts := &ast.Stmts{
 		ast.DeleteStmt{
 			TableName: "mytable",
 			Where:     nil,
@@ -210,7 +210,7 @@ func TestUpdateParser(t *testing.T) {
 	)
 	assert.Equal(t, nil, err)
 
-	expectedStmts := ast.Stmts{
+	expectedStmts := &ast.Stmts{
 		ast.UpdateStmt{
 			TableName: "mytable",
 			UpdatePairs: []ast.UpdatePair{
@@ -252,7 +252,7 @@ func TestShowParser(t *testing.T) {
 	stmts, err := Parse("show tables;show mytable;")
 	assert.Equal(t, nil, err)
 
-	expectedStmts := ast.Stmts{
+	expectedStmts := &ast.Stmts{
 		ast.ShowStmt{
 			ShowTables: true,
 		},
@@ -271,7 +271,7 @@ func TestSimpleParser(t *testing.T) {
 	stmts, err := Parse("begin;rollback;commit;")
 	assert.Equal(t, nil, err)
 
-	expectedStmts := ast.Stmts{
+	expectedStmts := &ast.Stmts{
 		ast.BeginStmt{},
 		ast.RollbackStmt{},
 		ast.CommitStmt{},

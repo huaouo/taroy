@@ -26,7 +26,7 @@ func newParser(sql string) *Parser {
 	return &Parser{l: newLexer(sql), stmts: []interface{}{}}
 }
 
-func (p *Parser) parse() (ast.Stmts, error) {
+func (p *Parser) parse() (*ast.Stmts, error) {
 	tok, _, err := p.l.nextToken()
 	for err == nil {
 		switch tok {
@@ -64,10 +64,10 @@ func (p *Parser) parse() (ast.Stmts, error) {
 	if err != EOF {
 		return nil, err
 	}
-	return p.stmts, nil
+	return &p.stmts, nil
 }
 
-func Parse(sql string) (ast.Stmts, error) {
+func Parse(sql string) (*ast.Stmts, error) {
 	return newParser(sql).parse()
 }
 

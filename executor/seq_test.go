@@ -38,13 +38,19 @@ func openDbForTest() *Db {
 	return dbForTest
 }
 
-func closeDbForTest() error {
-	defer os.RemoveAll(dbDirForTest)
+func removeWrapper() {
+	err := os.RemoveAll(dbDirForTest)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func closeDbForTest() {
+	defer removeWrapper()
 	err := dbForTest.kv.Close()
 	if err != nil {
-		return err
+		panic(err)
 	}
-	return nil
 }
 
 func TestLease(t *testing.T) {

@@ -16,7 +16,7 @@ import (
 
 var port = flag.String("port", "1214", "specify a tcp port to listen on")
 var help = flag.Bool("help", false, "print help information")
-var dir = flag.String("dir", ".", "specify path to DB folder")
+var _ = flag.String("dir", ".", "specify path to DB folder")
 
 func main() {
 	flag.Parse()

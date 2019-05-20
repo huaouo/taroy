@@ -11,14 +11,34 @@ const (
 	STRING
 )
 
+var fieldTypeNames = map[FieldType]string{
+	INT:    "INT",
+	STRING: "STRING",
+}
+
+func (t FieldType) String() string {
+	return fieldTypeNames[t]
+}
+
 type FieldTag int
 
 const (
-	UNTAGGED = iota
+	UNTAGGED FieldTag = iota
 	PRIMARY
 	UNIQUE
 	INDEX
 )
+
+var fieldTagNames = map[FieldTag]string{
+	UNTAGGED: "",
+	PRIMARY:  "PRIMARY",
+	UNIQUE:   "UNIQUE",
+	INDEX:    "INDEX",
+}
+
+func (t FieldTag) String() string {
+	return fieldTagNames[t]
+}
 
 type Field struct {
 	FieldName string

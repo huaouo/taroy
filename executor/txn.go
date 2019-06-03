@@ -18,16 +18,44 @@ const (
 	tablePrefix      = "@TP@"
 	queryOkPattern   = "Query OK, %d rows affected (%.2f sec)"
 	rowsInSetPattern = "%d row(s) in set (%.2f sec)"
-	emptySet         = "Empty set (%.2f sec)"
+	emptySetPattern  = "Empty set (%.2f sec)"
 )
 
-var (
-	internalErrorMessage = &rpc.ResultSet{Message: "Internal error"}
-)
+var internalErrorMessage = &rpc.ResultSet{Message: "Internal error"}
 
 type Txn struct {
-	kvTxn *badger.Txn
-	s     *seq
+	kvTxn        *badger.Txn
+	readTs       uint64
+	s            *seq
+	modifiedKeys map[string]bool
+}
+
+func (txn *Txn) get(key string) ([]byte, error) {
+	item, err := txn.kvTxn.Get([]byte(key))
+	if err != nil {
+		return nil, err
+	}
+	return item.ValueCopy(nil)
+}
+
+func (txn *Txn) set(key string, value []byte) error {
+	err := txn.kvTxn.Set([]byte(key), value)
+	if err == nil {
+		txn.modifiedKeys[key] = true
+	}
+	return err
+}
+
+func (txn *Txn) delete(key string) error {
+	err := txn.kvTxn.Delete([]byte(key))
+	if err == nil {
+		txn.modifiedKeys[key] = true
+	}
+	return err
+}
+
+func (txn *Txn) Valid() bool {
+	return txn.kvTxn != nil
 }
 
 func (txn *Txn) Execute(plan interface{}) *rpc.ResultSet {
@@ -44,12 +72,38 @@ func (txn *Txn) Execute(plan interface{}) *rpc.ResultSet {
 	return internalErrorMessage
 }
 
-func (txn *Txn) Commit() error {
+func (txn *Txn) Rollback() {
+	txn.kvTxn.Discard()
+	txn.kvTxn = nil
+}
+
+func (txn *Txn) Commit() *rpc.ResultSet {
+	start := time.Now()
+	db := GetDb()
+	db.Lock()
+	defer db.Unlock()
+	defer txn.Rollback()
+
+	commitFailureMessage := &rpc.ResultSet{
+		Message: fmt.Sprintf("Commit failed, rollback automatically"),
+	}
+	for k := range txn.modifiedKeys {
+		if ts, err := db.getLatestVersion(k); err != nil && ts > txn.readTs {
+			return commitFailureMessage
+		}
+	}
+
 	ts, err := txn.s.nextTs()
 	if err != nil {
-		return err
+		return commitFailureMessage
 	}
-	return txn.kvTxn.CommitAt(ts, nil)
+	err = txn.kvTxn.CommitAt(ts, nil)
+	if err != nil {
+		return commitFailureMessage
+	}
+	return &rpc.ResultSet{
+		Message: fmt.Sprintf(queryOkPattern, 0, time.Since(start).Seconds()),
+	}
 }
 
 // Table Metadata Structure:
@@ -57,8 +111,8 @@ func (txn *Txn) Commit() error {
 //   Value: []ast.Field
 func (txn *Txn) createTable(stmt *ast.CreateTableStmt) *rpc.ResultSet {
 	start := time.Now()
-	tableNameBytes := []byte(tablePrefix + stmt.TableName)
-	switch _, err := txn.kvTxn.Get(tableNameBytes); err {
+	tableName := tablePrefix + stmt.TableName
+	switch _, err := txn.get(tableName); err {
 	case nil:
 		return &rpc.ResultSet{
 			Message: fmt.Sprintf("Table '%s' already exists", stmt.TableName),
@@ -75,7 +129,7 @@ func (txn *Txn) createTable(stmt *ast.CreateTableStmt) *rpc.ResultSet {
 		log.Printf("Marshal error: %v\n", err)
 		return internalErrorMessage
 	}
-	err = txn.kvTxn.Set(tableNameBytes, fieldBytes)
+	err = txn.set(tableName, fieldBytes)
 	if err != nil {
 		log.Printf("Write error: %v\n", err)
 		return internalErrorMessage
@@ -91,8 +145,8 @@ func (txn *Txn) createTable(stmt *ast.CreateTableStmt) *rpc.ResultSet {
 //   Value: ...
 func (txn *Txn) dropTable(stmt *ast.DropTableStmt) *rpc.ResultSet {
 	start := time.Now()
-	tableNameBytes := []byte(tablePrefix + stmt.TableName)
-	switch _, err := txn.kvTxn.Get(tableNameBytes); err {
+	tableName := tablePrefix + stmt.TableName
+	switch _, err := txn.get(tableName); err {
 	case nil:
 		break
 	case badger.ErrKeyNotFound:
@@ -103,7 +157,7 @@ func (txn *Txn) dropTable(stmt *ast.DropTableStmt) *rpc.ResultSet {
 		log.Printf("Check Table Error: %v\n", err)
 		return internalErrorMessage
 	}
-	err := txn.kvTxn.Delete(tableNameBytes)
+	err := txn.delete(tableName)
 	if err != nil {
 		log.Printf("Delete error: %v\n", err)
 		return internalErrorMessage
@@ -114,7 +168,7 @@ func (txn *Txn) dropTable(stmt *ast.DropTableStmt) *rpc.ResultSet {
 	tableContentPrefixBytes := []byte(stmt.TableName + "@")
 	for it.Seek(tableContentPrefixBytes); it.ValidForPrefix(tableContentPrefixBytes); it.Next() {
 		k := it.Item().Key()
-		err := txn.kvTxn.Delete(k)
+		err := txn.delete(string(k))
 		if err != nil {
 			log.Printf("Delete error: %v\n", err)
 			return internalErrorMessage
@@ -146,7 +200,7 @@ func (txn *Txn) show(stmt *ast.ShowStmt) *rpc.ResultSet {
 		}
 		if len(results.Table) == 1 {
 			results.Table = nil
-			results.Message = fmt.Sprintf(emptySet, time.Since(start).Seconds())
+			results.Message = fmt.Sprintf(emptySetPattern, time.Since(start).Seconds())
 		} else {
 			results.Message = fmt.Sprintf(rowsInSetPattern, len(results.Table)-1, time.Since(start).Seconds())
 		}

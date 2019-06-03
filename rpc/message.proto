@@ -28,4 +28,5 @@ message Row {
 message ResultSet {
     repeated Row table = 1;
     string message = 2;
+    bool fail_flag = 3;
 }

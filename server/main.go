@@ -34,7 +34,10 @@ func main() {
 
 	s := grpc.NewServer()
 	defer s.Stop()
-	rpc.RegisterDBMSServer(s, &server{})
+
+	serverImpl := &server{}
+	go serverImpl.CleanUpTimeoutConnections()
+	rpc.RegisterDBMSServer(s, serverImpl)
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v\n", err)
 	}

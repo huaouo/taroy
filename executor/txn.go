@@ -16,12 +16,15 @@ import (
 
 const (
 	tablePrefix      = "@TP@"
-	queryOkPattern   = "Query OK, %d rows affected (%.2f sec)"
+	queryOkPattern   = "Query OK, %d row(s) affected (%.2f sec)"
 	rowsInSetPattern = "%d row(s) in set (%.2f sec)"
 	emptySetPattern  = "Empty set (%.2f sec)"
 )
 
-var internalErrorMessage = &rpc.ResultSet{Message: "Internal error"}
+var internalErrorMessage = &rpc.ResultSet{
+	Message:  "Internal error",
+	FailFlag: true,
+}
 
 type Txn struct {
 	kvTxn        *badger.Txn
@@ -61,11 +64,11 @@ func (txn *Txn) Valid() bool {
 func (txn *Txn) Execute(plan interface{}) *rpc.ResultSet {
 	switch plan.(type) {
 	case ast.CreateTableStmt:
-		return txn.createTable(plan.(*ast.CreateTableStmt))
+		return txn.createTable(plan.(ast.CreateTableStmt))
 	case ast.DropTableStmt:
-		return txn.dropTable(plan.(*ast.DropTableStmt))
+		return txn.dropTable(plan.(ast.DropTableStmt))
 	case ast.ShowStmt:
-		return txn.show(plan.(*ast.ShowStmt))
+		return txn.show(plan.(ast.ShowStmt))
 	}
 
 	log.Println("Plan not implemented")
@@ -85,7 +88,8 @@ func (txn *Txn) Commit() *rpc.ResultSet {
 	defer txn.Rollback()
 
 	commitFailureMessage := &rpc.ResultSet{
-		Message: fmt.Sprintf("Commit failed, rollback automatically"),
+		Message:  fmt.Sprintf("Commit failed, rollback automatically"),
+		FailFlag: true,
 	}
 	for k := range txn.modifiedKeys {
 		if ts, err := db.getLatestVersion(k); err != nil && ts > txn.readTs {
@@ -109,13 +113,14 @@ func (txn *Txn) Commit() *rpc.ResultSet {
 // Table Metadata Structure:
 //   Key: tablePrefix + TableName
 //   Value: []ast.Field
-func (txn *Txn) createTable(stmt *ast.CreateTableStmt) *rpc.ResultSet {
+func (txn *Txn) createTable(stmt ast.CreateTableStmt) *rpc.ResultSet {
 	start := time.Now()
 	tableName := tablePrefix + stmt.TableName
 	switch _, err := txn.get(tableName); err {
 	case nil:
 		return &rpc.ResultSet{
-			Message: fmt.Sprintf("Table '%s' already exists", stmt.TableName),
+			Message:  fmt.Sprintf("Table '%s' already exists", stmt.TableName),
+			FailFlag: true,
 		}
 	case badger.ErrKeyNotFound:
 		break
@@ -143,7 +148,7 @@ func (txn *Txn) createTable(stmt *ast.CreateTableStmt) *rpc.ResultSet {
 // Table Content Structure:
 //   Key: TableName + "@" + ...
 //   Value: ...
-func (txn *Txn) dropTable(stmt *ast.DropTableStmt) *rpc.ResultSet {
+func (txn *Txn) dropTable(stmt ast.DropTableStmt) *rpc.ResultSet {
 	start := time.Now()
 	tableName := tablePrefix + stmt.TableName
 	switch _, err := txn.get(tableName); err {
@@ -151,7 +156,8 @@ func (txn *Txn) dropTable(stmt *ast.DropTableStmt) *rpc.ResultSet {
 		break
 	case badger.ErrKeyNotFound:
 		return &rpc.ResultSet{
-			Message: fmt.Sprintf("Unknown table '%s'", stmt.TableName),
+			Message:  fmt.Sprintf("Unknown table '%s'", stmt.TableName),
+			FailFlag: true,
 		}
 	default:
 		log.Printf("Check Table Error: %v\n", err)
@@ -183,7 +189,7 @@ func (txn *Txn) dropTable(stmt *ast.DropTableStmt) *rpc.ResultSet {
 //   Scan keys prefixed by tablePrefix, return collection of all table names
 // Else:
 //   Return table def.
-func (txn *Txn) show(stmt *ast.ShowStmt) *rpc.ResultSet {
+func (txn *Txn) show(stmt ast.ShowStmt) *rpc.ResultSet {
 	start := time.Now()
 	if stmt.ShowTables {
 		it := txn.kvTxn.NewIterator(badger.DefaultIteratorOptions)
@@ -213,7 +219,8 @@ func (txn *Txn) show(stmt *ast.ShowStmt) *rpc.ResultSet {
 		it.Seek(tableNameBytes)
 		if string(it.Item().Key())[len(tablePrefix):] != stmt.TableName {
 			return &rpc.ResultSet{
-				Message: fmt.Sprintf("Table '%s' doesn't exist", stmt.TableName),
+				Message:  fmt.Sprintf("Table '%s' doesn't exist", stmt.TableName),
+				FailFlag: true,
 			}
 		}
 		results := &rpc.ResultSet{}

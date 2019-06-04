@@ -9,6 +9,7 @@ import (
 	"github.com/dgraph-io/badger"
 	"log"
 	"math"
+	"os"
 	"path/filepath"
 	"sync"
 )
@@ -29,6 +30,13 @@ func GetDb() *Db {
 		opts := badger.DefaultOptions
 		opts.Dir = filepath.Join(flag.Lookup("dir").Value.String(), "db")
 		opts.ValueDir = opts.Dir
+		if _, err := os.Stat(filepath.Join(opts.Dir, "LOCK")); err == nil {
+			opts.Truncate = true
+			err = os.Remove(filepath.Join(opts.Dir, "LOCK"))
+			if err != nil {
+				log.Fatal("Cannot unlock db")
+			}
+		}
 		managedDb, err := badger.OpenManaged(opts)
 		if err != nil {
 			log.Fatalf("Cannot open DB file: %v\n", err)
@@ -66,6 +74,7 @@ func (db *Db) getLatestVersion(key string) (uint64, error) {
 	itOpts := badger.DefaultIteratorOptions
 	itOpts.AllVersions = true
 	it := txn.NewIterator(itOpts)
+	defer it.Close()
 	it.Seek([]byte(key))
 	if !it.Valid() || string(it.Item().Key()) != key {
 		return 0, badger.ErrKeyNotFound

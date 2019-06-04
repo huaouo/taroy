@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/huaouo/taroy/rpc"
+	"github.com/olekukonko/tablewriter"
 	"os"
 	"strings"
 )
@@ -32,6 +33,34 @@ func readLine() (string, error) {
 	}
 
 	return strings.TrimSpace(builder.String()), nil
+}
+
+func printTable(outFile *os.File, table []*rpc.Row) {
+	writer := tablewriter.NewWriter(outFile)
+	var head []string
+	for _, v := range table[0].Fields {
+		switch v.Val.(type) {
+		case *rpc.Value_IntVal:
+			head = append(head, string(v.Val.(*rpc.Value_IntVal).IntVal))
+		case *rpc.Value_StrVal:
+			head = append(head, string(v.Val.(*rpc.Value_StrVal).StrVal))
+		}
+	}
+	writer.SetHeader(head)
+
+	for i := 1; i < len(table); i++ {
+		var line []string
+		for _, v := range table[i].Fields {
+			switch v.Val.(type) {
+			case *rpc.Value_IntVal:
+				line = append(line, string(v.Val.(*rpc.Value_IntVal).IntVal))
+			case *rpc.Value_StrVal:
+				line = append(line, string(v.Val.(*rpc.Value_StrVal).StrVal))
+			}
+		}
+		writer.Append(line)
+	}
+	writer.Render()
 }
 
 func clientLoop(ctx context.Context, c rpc.DBMSClient) bool {
@@ -61,14 +90,30 @@ func clientLoop(ctx context.Context, c rpc.DBMSClient) bool {
 		fmt.Print("> ")
 	}
 
-	sql := builder.String()
+	candidateSqls := strings.Split(builder.String(), ";")
+	for _, sql := range candidateSqls {
+		sql = strings.TrimSpace(sql)
+		if sql == "" {
+			continue
+		}
+		resultSet, err := c.Execute(ctx, &rpc.RawSQL{Sql: sql + ";"})
+		if err != nil || resultSet == nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Execute error: %v\n", err)
+			break
+		}
 
-	resultSet, err := c.Execute(ctx, &rpc.RawSQL{Sql: sql})
-	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Execute error: %v\n", err)
-	}
-	if resultSet != nil {
-		fmt.Println(resultSet.Message)
+		outFile := os.Stdout
+		if resultSet.FailFlag {
+			outFile = os.Stderr
+		}
+		if resultSet.Table != nil {
+			printTable(outFile, resultSet.Table)
+		}
+		_, _ = fmt.Fprintln(outFile, resultSet.Message)
+		_, _ = fmt.Fprintln(outFile)
+		if resultSet.FailFlag {
+			break
+		}
 	}
 	return true
 }

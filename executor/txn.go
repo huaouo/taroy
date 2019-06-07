@@ -5,6 +5,7 @@
 package executor
 
 import (
+	"errors"
 	"fmt"
 	"github.com/dgraph-io/badger"
 	"github.com/huaouo/taroy/ast"
@@ -15,15 +16,34 @@ import (
 )
 
 const (
-	tablePrefix      = "@TP@"
-	queryOkPattern   = "Query OK, %d row(s) affected (%.2f sec)"
-	rowsInSetPattern = "%d row(s) in set (%.2f sec)"
-	emptySetPattern  = "Empty set (%.2f sec)"
+	tablePrefix = "@TP@"
+
+	queryOkPattern       = "Query OK, %d row(s) affected (%.2f sec)"
+	rowsInSetPattern     = "%d row(s) in set (%.2f sec)"
+	emptySetPattern      = "Empty set (%.2f sec)"
+	tableNotExistPattern = "Table '%s' doesn't exist"
 )
 
+var internalError = errors.New("internal error")
 var internalErrorMessage = &rpc.ResultSet{
 	Message:  "Internal error",
 	FailFlag: true,
+}
+
+func marshal(v interface{}) ([]byte, error) {
+	bytes, err := msgpack.Marshal(v)
+	if err != nil {
+		log.Printf("Marshal error: %v\n", err)
+	}
+	return bytes, err
+}
+
+func unmarshal(data []byte, v interface{}) error {
+	err := msgpack.Unmarshal(data, v)
+	if err != nil {
+		log.Printf("Unmarshal error: %v\n", err)
+	}
+	return err
 }
 
 type Txn struct {
@@ -33,28 +53,44 @@ type Txn struct {
 	modifiedKeys map[string]bool
 }
 
-func (txn *Txn) get(key string) ([]byte, error) {
+func (txn *Txn) getKv(key string) ([]byte, error) {
 	item, err := txn.kvTxn.Get([]byte(key))
 	if err != nil {
+		log.Printf("Get error: %v\n", err)
 		return nil, err
 	}
 	return item.ValueCopy(nil)
 }
 
-func (txn *Txn) set(key string, value []byte) error {
+func (txn *Txn) setKv(key string, value []byte) error {
 	err := txn.kvTxn.Set([]byte(key), value)
 	if err == nil {
 		txn.modifiedKeys[key] = true
+	} else {
+		log.Printf("Set error: %v\n", err)
 	}
 	return err
 }
 
-func (txn *Txn) delete(key string) error {
+func (txn *Txn) deleteKv(key string) error {
 	err := txn.kvTxn.Delete([]byte(key))
 	if err == nil {
 		txn.modifiedKeys[key] = true
+	} else {
+		log.Printf("Delete error: %v\n", err)
 	}
 	return err
+}
+
+func (txn *Txn) isKeyExists(key string) (bool, error) {
+	switch _, err := txn.getKv(key); err {
+	case nil:
+		return true, nil
+	case badger.ErrKeyNotFound:
+		return false, nil
+	default:
+		return false, internalError
+	}
 }
 
 func (txn *Txn) Valid() bool {
@@ -116,27 +152,22 @@ func (txn *Txn) Commit() *rpc.ResultSet {
 func (txn *Txn) createTable(stmt ast.CreateTableStmt) *rpc.ResultSet {
 	start := time.Now()
 	tableName := tablePrefix + stmt.TableName
-	switch _, err := txn.get(tableName); err {
-	case nil:
+	exist, err := txn.isKeyExists(tableName)
+	if err != nil {
+		return internalErrorMessage
+	} else if exist {
 		return &rpc.ResultSet{
 			Message:  fmt.Sprintf("Table '%s' already exists", stmt.TableName),
 			FailFlag: true,
 		}
-	case badger.ErrKeyNotFound:
-		break
-	default:
-		log.Printf("Check Table Error: %v\n", err)
-		return internalErrorMessage
 	}
 
-	fieldBytes, err := msgpack.Marshal(stmt.Fields)
+	fieldBytes, err := marshal(stmt.Fields)
 	if err != nil {
-		log.Printf("Marshal error: %v\n", err)
 		return internalErrorMessage
 	}
-	err = txn.set(tableName, fieldBytes)
+	err = txn.setKv(tableName, fieldBytes)
 	if err != nil {
-		log.Printf("Write error: %v\n", err)
 		return internalErrorMessage
 	}
 	return &rpc.ResultSet{
@@ -151,21 +182,17 @@ func (txn *Txn) createTable(stmt ast.CreateTableStmt) *rpc.ResultSet {
 func (txn *Txn) dropTable(stmt ast.DropTableStmt) *rpc.ResultSet {
 	start := time.Now()
 	tableName := tablePrefix + stmt.TableName
-	switch _, err := txn.get(tableName); err {
-	case nil:
-		break
-	case badger.ErrKeyNotFound:
+	exist, err := txn.isKeyExists(tableName)
+	if err != nil {
+		return internalErrorMessage
+	} else if !exist {
 		return &rpc.ResultSet{
-			Message:  fmt.Sprintf("Unknown table '%s'", stmt.TableName),
+			Message:  fmt.Sprintf(tableNotExistPattern, stmt.TableName),
 			FailFlag: true,
 		}
-	default:
-		log.Printf("Check Table Error: %v\n", err)
-		return internalErrorMessage
 	}
-	err := txn.delete(tableName)
+	err = txn.deleteKv(tableName)
 	if err != nil {
-		log.Printf("Delete error: %v\n", err)
 		return internalErrorMessage
 	}
 
@@ -174,9 +201,8 @@ func (txn *Txn) dropTable(stmt ast.DropTableStmt) *rpc.ResultSet {
 	tableContentPrefixBytes := []byte(stmt.TableName + "@")
 	for it.Seek(tableContentPrefixBytes); it.ValidForPrefix(tableContentPrefixBytes); it.Next() {
 		k := it.Item().Key()
-		err := txn.delete(string(k))
+		err := txn.deleteKv(string(k))
 		if err != nil {
-			log.Printf("Delete error: %v\n", err)
 			return internalErrorMessage
 		}
 	}
@@ -219,7 +245,7 @@ func (txn *Txn) show(stmt ast.ShowStmt) *rpc.ResultSet {
 		it.Seek(tableNameBytes)
 		if string(it.Item().Key())[len(tablePrefix):] != stmt.TableName {
 			return &rpc.ResultSet{
-				Message:  fmt.Sprintf("Table '%s' doesn't exist", stmt.TableName),
+				Message:  fmt.Sprintf(tableNotExistPattern, stmt.TableName),
 				FailFlag: true,
 			}
 		}
@@ -232,13 +258,11 @@ func (txn *Txn) show(stmt ast.ShowStmt) *rpc.ResultSet {
 			}})
 		fieldBytes, err := it.Item().Value()
 		if err != nil {
-			log.Printf("Read error: %v\n", err)
 			return internalErrorMessage
 		}
 		var fields []ast.Field
-		err = msgpack.Unmarshal(fieldBytes, &fields)
+		err = unmarshal(fieldBytes, &fields)
 		if err != nil {
-			log.Printf("Unmarshal error: %v\n", err)
 			return internalErrorMessage
 		}
 

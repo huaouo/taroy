@@ -28,12 +28,7 @@ func openDbForTest() *Db {
 
 	dbForTest = &Db{
 		kv: managedDb,
-		s: &seq{
-			kv:     managedDb,
-			key:    []byte(timeStampKey),
-			next:   0,
-			leased: 0,
-		},
+		s:  getSeq(timeStampKey),
 	}
 	return dbForTest
 }
@@ -67,7 +62,7 @@ func TestLease(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < numOfTs/numOfGoRoutine; i++ {
 			mutex.Lock()
-			ts, err := s.nextTs()
+			ts, err := s.getNext()
 			assert.Nil(t, err)
 			ch <- ts
 			mutex.Unlock()
@@ -103,7 +98,7 @@ func TestRelease(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < numOfTs/numOfGoRoutine; i++ {
 			mutex.Lock()
-			ts, err := s.nextTs()
+			ts, err := s.getNext()
 			if i%3 == 0 {
 				err = s.release()
 				assert.Nil(t, err)
@@ -143,7 +138,7 @@ func TestLose(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < numOfTs/numOfGoRoutine; i++ {
 			mutex.Lock()
-			ts, err := s.nextTs()
+			ts, err := s.getNext()
 			if i%3 == 0 {
 				// Reset seq
 				s.next = 0

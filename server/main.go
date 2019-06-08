@@ -7,11 +7,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/huaouo/taroy/executor"
 	"github.com/huaouo/taroy/rpc"
 	"google.golang.org/grpc"
 	"log"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 var port = flag.String("port", "1214", "specify a tcp port to listen on")
@@ -19,6 +22,21 @@ var help = flag.Bool("help", false, "print help information")
 var _ = flag.String("dir", ".", "specify path to DB folder")
 
 func main() {
+	sigChan := make(chan os.Signal)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGKILL, syscall.SIGTERM)
+	go func() {
+		for range sigChan {
+			db := executor.GetDb()
+			log.Println("Exit ...")
+			err := db.Close()
+			if err == nil {
+				os.Exit(0)
+			} else {
+				os.Exit(-1)
+			}
+		}
+	}()
+
 	flag.Parse()
 	if *help {
 		_, _ = fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])

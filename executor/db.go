@@ -44,19 +44,14 @@ func GetDb() *Db {
 
 		db = &Db{
 			kv: managedDb,
-			s: &seq{
-				kv:     managedDb,
-				key:    []byte(timeStampKey),
-				next:   0,
-				leased: 0,
-			},
+			s:  getSeq(timeStampKey),
 		}
 	})
 	return db
 }
 
 func (db *Db) NewTxn() (*Txn, error) {
-	ts, err := db.s.nextTs()
+	ts, err := db.s.getNext()
 	if err != nil {
 		return nil, err
 	}
@@ -80,4 +75,12 @@ func (db *Db) getLatestVersion(key string) (uint64, error) {
 		return 0, badger.ErrKeyNotFound
 	}
 	return it.Item().Version(), nil
+}
+
+func (db *Db) Close() error {
+	for _, s := range seqMap {
+		_ = s.release()
+	}
+	err := db.kv.Close()
+	return err
 }

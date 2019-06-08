@@ -7,6 +7,7 @@ package executor
 import (
 	"encoding/binary"
 	"github.com/dgraph-io/badger"
+	"log"
 	"sync"
 )
 
@@ -20,6 +21,28 @@ type seq struct {
 	leased uint64
 }
 
+var (
+	seqMap      map[string]*seq
+	newSeqMutex sync.Mutex
+)
+
+func getSeq(key string) *seq {
+	newSeqMutex.Lock()
+	defer newSeqMutex.Unlock()
+	if s, ok := seqMap[key]; ok {
+		return s
+	} else {
+		s = &seq{
+			kv:     GetDb().kv,
+			key:    []byte(key),
+			next:   0,
+			leased: 0,
+		}
+		seqMap[key] = s
+		return s
+	}
+}
+
 func (s *seq) updateLease() error {
 	kvTxn := s.kv.NewTransactionAt(1, true)
 	defer kvTxn.Discard()
@@ -27,10 +50,12 @@ func (s *seq) updateLease() error {
 	if err == badger.ErrKeyNotFound {
 		s.next = 0
 	} else if err != nil {
+		log.Printf("UpdateLease error: get: %v", err.Error())
 		return err
 	} else {
 		val, err := item.Value()
 		if err != nil {
+			log.Printf("UpdateLease error: value: %v", err.Error())
 			return err
 		}
 		s.next = binary.LittleEndian.Uint64(val)
@@ -41,17 +66,19 @@ func (s *seq) updateLease() error {
 	binary.LittleEndian.PutUint64(buf[:], lease)
 	err = kvTxn.Set(s.key, buf[:])
 	if err != nil {
+		log.Printf("UpdateLease error: set: %v", err.Error())
 		return err
 	}
 	err = kvTxn.CommitAt(1, nil)
 	if err != nil {
+		log.Printf("UpdateLease error: commit: %v", err.Error())
 		return err
 	}
 	s.leased = lease
 	return nil
 }
 
-func (s *seq) nextTs() (uint64, error) {
+func (s *seq) getNext() (uint64, error) {
 	s.Lock()
 	defer s.Unlock()
 	if s.next >= s.leased {

@@ -44,7 +44,12 @@ func GetDb() *Db {
 
 		db = &Db{
 			kv: managedDb,
-			s:  getSeq(timeStampKey),
+			s: &seq{
+				kv:     managedDb,
+				key:    []byte(timeStampKey),
+				next:   0,
+				leased: 0,
+			},
 		}
 	})
 	return db
@@ -81,6 +86,7 @@ func (db *Db) Close() error {
 	for _, s := range seqMap {
 		_ = s.release()
 	}
+	_ = db.s.release()
 	err := db.kv.Close()
 	return err
 }

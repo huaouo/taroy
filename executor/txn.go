@@ -91,7 +91,7 @@ func (txn *Txn) deleteKv(key []byte) error {
 }
 
 func (txn *Txn) isKeyExists(key []byte) (bool, error) {
-	switch _, err := txn.getKv(key); err {
+	switch _, err := txn.kvTxn.Get(key); err {
 	case nil:
 		return true, nil
 	case badger.ErrKeyNotFound:
@@ -113,6 +113,8 @@ func (txn *Txn) Execute(plan interface{}) *rpc.ResultSet {
 		return txn.dropTable(plan.(ast.DropTableStmt))
 	case ast.ShowStmt:
 		return txn.show(plan.(ast.ShowStmt))
+	case ast.InsertStmt:
+		return txn.insert(plan.(ast.InsertStmt))
 	}
 
 	log.Println("Plan not implemented")
@@ -366,6 +368,26 @@ type pendingWrite struct {
 	val []byte
 }
 
+func i64ToU64(i int64) uint64 {
+	var u uint64
+	if i >= 0 {
+		u = uint64(i) + math.MaxInt64 + 1
+	} else {
+		u = uint64(i + math.MaxInt64 + 1)
+	}
+	return u
+}
+
+func u64ToI64(u uint64) int64 {
+	var i int64
+	if u <= math.MaxInt64 {
+		i = int64(u) - math.MaxInt64 - 1
+	} else {
+		i = int64(u - math.MaxInt64 - 1)
+	}
+	return i
+}
+
 func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 	start := time.Now()
 
@@ -380,7 +402,7 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 		}
 	}
 
-	fieldBytes, err := txn.getKv([]byte(stmt.TableName))
+	fieldBytes, err := txn.getKv(tableMetadataKey)
 	if err != nil {
 		return internalErrorMessage
 	}
@@ -412,8 +434,8 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 		switch v := stmt.Values[primaryIndex]; v.(type) {
 		case string:
 			primaryKeyPart = []byte(v.(string))
-		case uint64:
-			primaryKeyPart = uint64ToBytesBE(v.(uint64))
+		case int64:
+			primaryKeyPart = uint64ToBytesBE(i64ToU64(v.(int64)))
 		}
 	}
 	primaryKey := getBytes(stmt.TableName, byte('@'), byte(primaryIndex), byte('@'), primaryKeyPart)
@@ -436,8 +458,8 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 		switch v := stmt.Values[i]; v.(type) {
 		case string:
 			uniqueKeyPart = []byte(v.(string))
-		case uint64:
-			uniqueKeyPart = uint64ToBytesBE(v.(uint64))
+		case int64:
+			uniqueKeyPart = uint64ToBytesBE(i64ToU64(v.(int64)))
 		}
 		uniqueKey := getBytes(stmt.TableName, byte('@'), byte(i), byte('@'), uniqueKeyPart)
 		exist, err = txn.isKeyExists(uniqueKey)
@@ -459,8 +481,8 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 		switch v := stmt.Values[i]; v.(type) {
 		case string:
 			indexKeyPart = []byte(v.(string))
-		case uint64:
-			indexKeyPart = uint64ToBytesBE(v.(uint64))
+		case int64:
+			indexKeyPart = uint64ToBytesBE(i64ToU64(v.(int64)))
 		}
 		indexKeyPart = append(indexKeyPart, byte('@'))
 		indexKeyPart = append(indexKeyPart, primaryKeyPart...)

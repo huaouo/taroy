@@ -226,7 +226,7 @@ func (p *Parser) parseLiteral() interface{} {
 	case stringLiteral:
 		return valueLit
 	case intLiteral:
-		valueInt, err := strconv.Atoi(valueLit)
+		valueInt, err := strconv.ParseInt(valueLit, 10, 64)
 		if err != nil {
 			p.err = InvalidIntLiteral
 		} else {

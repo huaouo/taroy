@@ -22,7 +22,7 @@ type seq struct {
 }
 
 var (
-	seqMap      map[string]*seq
+	seqMap      = make(map[string]*seq)
 	newSeqMutex sync.Mutex
 )
 

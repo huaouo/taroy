@@ -25,7 +25,7 @@ func TestSelectParser(t *testing.T) {
 			Where: &ast.WhereClause{
 				FieldName: "col",
 				CmpOp:     ast.GT,
-				Value:     12,
+				Value:     int64(12),
 			},
 		},
 		ast.SelectStmt{
@@ -159,11 +159,11 @@ func TestInsertParser(t *testing.T) {
 	expectedStmts := &ast.Stmts{
 		ast.InsertStmt{
 			TableName: "mytable",
-			Values:    []interface{}{1, "2"},
+			Values:    []interface{}{int64(1), "2"},
 		},
 		ast.InsertStmt{
 			TableName: "mytable",
-			Values:    []interface{}{1},
+			Values:    []interface{}{int64(1)},
 		},
 	}
 	assert.Equal(t, expectedStmts, stmts)
@@ -214,30 +214,30 @@ func TestUpdateParser(t *testing.T) {
 		ast.UpdateStmt{
 			TableName: "mytable",
 			UpdatePairs: []ast.UpdatePair{
-				{FieldName: "a", Value: 1},
+				{FieldName: "a", Value: int64(1)},
 				{FieldName: "b", Value: "xmu"},
 			},
 			Where: &ast.WhereClause{
 				FieldName: "a",
 				CmpOp:     ast.NE,
-				Value:     12,
+				Value:     int64(12),
 			},
 		},
 		ast.UpdateStmt{
 			TableName: "mytable",
 			UpdatePairs: []ast.UpdatePair{
-				{FieldName: "a", Value: 1},
+				{FieldName: "a", Value: int64(1)},
 			},
 			Where: &ast.WhereClause{
 				FieldName: "a",
 				CmpOp:     ast.NE,
-				Value:     12,
+				Value:     int64(12),
 			},
 		},
 		ast.UpdateStmt{
 			TableName: "mytable",
 			UpdatePairs: []ast.UpdatePair{
-				{FieldName: "a", Value: 1},
+				{FieldName: "a", Value: int64(1)},
 			},
 			Where: nil,
 		},

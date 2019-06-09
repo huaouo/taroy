@@ -28,7 +28,12 @@ func openDbForTest() *Db {
 
 	dbForTest = &Db{
 		kv: managedDb,
-		s:  getSeq(timeStampKey),
+		s: &seq{
+			kv:     managedDb,
+			key:    []byte(timeStampKey),
+			next:   0,
+			leased: 0,
+		},
 	}
 	return dbForTest
 }
@@ -42,7 +47,7 @@ func removeWrapper() {
 
 func closeDbForTest() {
 	defer removeWrapper()
-	err := dbForTest.kv.Close()
+	err := dbForTest.Close()
 	if err != nil {
 		panic(err)
 	}

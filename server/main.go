@@ -23,7 +23,7 @@ var _ = flag.String("dir", ".", "specify path to DB folder")
 
 func main() {
 	sigChan := make(chan os.Signal)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGKILL, syscall.SIGTERM)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		for range sigChan {
 			db := executor.GetDb()

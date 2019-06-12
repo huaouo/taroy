@@ -47,12 +47,16 @@ func newLexer(sql string) *lexer {
 	return &lexer{r: bufio.NewReader(strings.NewReader(sql))}
 }
 
-func (l *lexer) read() rune {
+func (l *lexer) readKeepCase() rune {
 	ch, _, err := l.r.ReadRune()
 	if err != nil {
 		return eofRune
 	}
+	return ch
+}
 
+func (l *lexer) read() rune {
+	ch := l.readKeepCase()
 	if isLetter(ch) && unicode.IsUpper(ch) {
 		ch = unicode.ToLower(ch)
 	}
@@ -109,10 +113,10 @@ func (l *lexer) getEscapedRune() (rune, error) {
 }
 
 func (l *lexer) scanStringLiteral() (token, string, error) {
-	_ = l.read()
+	_ = l.readKeepCase()
 	buf := new(bytes.Buffer)
 
-	ch := l.read()
+	ch := l.readKeepCase()
 	for ch != eofRune && ch != '"' && ch != '\n' {
 		if ch != '\\' {
 			buf.WriteRune(ch)
@@ -124,7 +128,7 @@ func (l *lexer) scanStringLiteral() (token, string, error) {
 			}
 			buf.WriteRune(ch)
 		}
-		ch = l.read()
+		ch = l.readKeepCase()
 	}
 
 	if ch != '"' {

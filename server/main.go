@@ -50,6 +50,9 @@ func main() {
 	}
 	log.Printf("Start to listen on :%s (tcp)\n", *port)
 
+	// init db object
+	_ = executor.GetDb()
+
 	s := grpc.NewServer()
 	defer s.Stop()
 

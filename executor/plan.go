@@ -174,7 +174,7 @@ func (pIt *planIterator) valid() bool {
 		}
 		return true
 	}
-	return false
+	return true
 }
 
 func (pIt *planIterator) value() ([]interface{}, error) {
@@ -206,6 +206,9 @@ func (pIt *planIterator) value() ([]interface{}, error) {
 		partKey := extractPartKey(uniqueKey)
 		indexValue := extractIndexValue(partKey)
 		tupleBytes, err = pIt.txn.getKv(concatBytes(pIt.tableName, byte('@'), byte(pIt.primaryIndex), byte('@'), indexValue))
+		if err != nil {
+			return nil, err
+		}
 	}
 	var tuple []interface{}
 	err = msgpackUnmarshal(tupleBytes, &tuple)

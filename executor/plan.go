@@ -87,15 +87,28 @@ func newPlanIterator(txn *Txn, tableName string, where *ast.WhereClause) (*planI
 	valueBytes := getValueBytes(where.Value)
 	valueOptBytes := getValueBytes(where.ValueOpt)
 	exPrefix := concatBytes(prefix, valueBytes)
-	if field.FieldTag != ast.UNTAGGED {
+	if field.FieldTag == ast.UNTAGGED {
+		kvIt.Seek(prefix)
+	} else {
 		switch where.CmpOp {
 		case ast.GE, ast.EQ, ast.BETWEEN:
 			kvIt.Seek(exPrefix)
 		case ast.GT:
 			kvIt.Seek(exPrefix)
 			if kvIt.Valid() {
-				kvIt.Next()
+				if field.FieldTag == ast.INDEX {
+					targetValueBytes := extractIndexKey(extractPartKey(kvIt.Item().Key()))
+					if bytes.Compare(targetValueBytes, valueBytes) == 0 {
+						kvIt.Next()
+					}
+				} else {
+					if bytes.Compare(kvIt.Item().Key(), exPrefix) == 0 {
+						kvIt.Next()
+					}
+				}
 			}
+		default:
+			kvIt.Seek(prefix)
 		}
 	}
 
@@ -137,6 +150,21 @@ func (pIt *planIterator) getCurrentComparingBytes() ([]byte, error) {
 	return partKey, nil
 }
 
+func (pIt *planIterator) compareWhile(curResult int, f func(result int) bool) bool {
+	for f(curResult) {
+		pIt.next()
+		if !pIt.kvIt.ValidForPrefix(pIt.prefix) {
+			return false
+		}
+		partKey, err := pIt.getCurrentComparingBytes()
+		if err != nil {
+			return false
+		}
+		curResult = bytes.Compare(partKey, pIt.valueBytes)
+	}
+	return true
+}
+
 func (pIt *planIterator) valid() bool {
 	if !pIt.kvIt.ValidForPrefix(pIt.prefix) {
 		return false
@@ -149,30 +177,55 @@ func (pIt *planIterator) valid() bool {
 		return false
 	}
 
+	compareResult := bytes.Compare(partKey, pIt.valueBytes)
+	if pIt.tag == ast.UNTAGGED {
+		switch pIt.cmpOp {
+		case ast.BETWEEN:
+			compareResultOpt := bytes.Compare(partKey, pIt.valueOptBytes)
+			for compareResult < 0 || compareResultOpt > 0 {
+				pIt.next()
+				if !pIt.kvIt.ValidForPrefix(pIt.prefix) {
+					return false
+				}
+				partKey, err = pIt.getCurrentComparingBytes()
+				if err != nil {
+					return false
+				}
+				compareResult = bytes.Compare(partKey, pIt.valueBytes)
+				compareResultOpt = bytes.Compare(partKey, pIt.valueOptBytes)
+			}
+			return true
+		case ast.GT:
+			return pIt.compareWhile(compareResult, func(result int) bool {
+				return result != 1
+			})
+		case ast.GE:
+			return pIt.compareWhile(compareResult, func(result int) bool {
+				return result < 0
+			})
+		}
+	}
+
 	if pIt.cmpOp == ast.BETWEEN {
 		return bytes.Compare(partKey, pIt.valueOptBytes) <= 0
 	}
-	compareResult := bytes.Compare(partKey, pIt.valueBytes)
 	switch pIt.cmpOp {
 	case ast.LT:
 		return compareResult == -1
 	case ast.LE:
 		return compareResult <= 0
 	case ast.EQ:
-		return compareResult == 0
-	case ast.NE:
-		for compareResult == 0 {
-			pIt.next()
-			if !pIt.kvIt.ValidForPrefix(pIt.prefix) {
-				return false
-			}
-			partKey, err = pIt.getCurrentComparingBytes()
-			if err != nil {
-				return false
-			}
-			compareResult = bytes.Compare(partKey, pIt.valueBytes)
+		if pIt.tag != ast.UNTAGGED {
+			return compareResult == 0
 		}
-		return true
+
+		return pIt.compareWhile(compareResult, func(result int) bool {
+			return result != 0
+		})
+	case ast.NE:
+		return pIt.compareWhile(compareResult, func(result int) bool {
+			return result == 0
+		})
 	}
 	return true
 }

@@ -28,6 +28,7 @@ type Db struct {
 func GetDb() *Db {
 	once.Do(func() {
 		opts := badger.DefaultOptions
+		opts.SyncWrites = true
 		opts.Dir = filepath.Join(flag.Lookup("dir").Value.String(), "db")
 		opts.ValueDir = opts.Dir
 		if _, err := os.Stat(filepath.Join(opts.Dir, "LOCK")); err == nil {

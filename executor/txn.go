@@ -449,6 +449,9 @@ func (txn *Txn) sel(stmt ast.SelectStmt) *rpc.ResultSet {
 
 	var fieldIndices []int
 	fields, err := txn.getFields(stmt.TableName)
+	if err != nil {
+		return internalErrorMessage
+	}
 outer:
 	for _, fieldName := range stmt.FieldNames {
 		if fieldName == "*" {

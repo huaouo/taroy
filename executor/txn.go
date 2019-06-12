@@ -5,13 +5,11 @@
 package executor
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/dgraph-io/badger"
 	"github.com/huaouo/taroy/ast"
 	"github.com/huaouo/taroy/rpc"
-	"github.com/vmihailenco/msgpack"
 	"log"
 	"math"
 	"time"
@@ -34,22 +32,6 @@ var internalError = errors.New("internal error")
 var internalErrorMessage = &rpc.ResultSet{
 	Message:  "Internal error",
 	FailFlag: true,
-}
-
-func msgpackMarshal(v interface{}) ([]byte, error) {
-	bytes, err := msgpack.Marshal(v)
-	if err != nil {
-		log.Printf("Marshal error: %v\n", err)
-	}
-	return bytes, err
-}
-
-func msgpackUnmarshal(data []byte, v interface{}) error {
-	err := msgpack.Unmarshal(data, v)
-	if err != nil {
-		log.Printf("Unmarshal error: %v\n", err)
-	}
-	return err
 }
 
 type Txn struct {
@@ -105,16 +87,22 @@ func (txn *Txn) Valid() bool {
 	return txn.kvTxn != nil
 }
 
-func (txn *Txn) Execute(plan interface{}) *rpc.ResultSet {
-	switch plan.(type) {
+func (txn *Txn) Execute(stmt interface{}) *rpc.ResultSet {
+	switch stmt.(type) {
 	case ast.CreateTableStmt:
-		return txn.createTable(plan.(ast.CreateTableStmt))
+		return txn.createTable(stmt.(ast.CreateTableStmt))
 	case ast.DropTableStmt:
-		return txn.dropTable(plan.(ast.DropTableStmt))
+		return txn.dropTable(stmt.(ast.DropTableStmt))
 	case ast.ShowStmt:
-		return txn.show(plan.(ast.ShowStmt))
+		return txn.show(stmt.(ast.ShowStmt))
 	case ast.InsertStmt:
-		return txn.insert(plan.(ast.InsertStmt))
+		return txn.insert(stmt.(ast.InsertStmt))
+	case ast.SelectStmt:
+		return txn.sel(stmt.(ast.SelectStmt))
+		//case ast.DeleteStmt:
+		//	return txn.del(stmt.(ast.DeleteStmt))
+		//case ast.UpdateStmt:
+		//	return txn.upd(stmt.(ast.UpdateStmt))
 	}
 
 	log.Println("Plan not implemented")
@@ -156,19 +144,6 @@ func (txn *Txn) Commit() *rpc.ResultSet {
 	}
 }
 
-func getPrimaryKeyIndex(fields []ast.Field) int {
-	index := noPrimaryKey
-	for i, f := range fields {
-		if f.FieldTag == ast.PRIMARY {
-			if index != noPrimaryKey {
-				return multiplePrimaryKey
-			}
-			index = i
-		}
-	}
-	return index
-}
-
 func getKeyIndicesExceptPrimaryByTag(fields []ast.Field, tag ast.FieldTag) []int {
 	var indices []int
 	for i, f := range fields {
@@ -179,21 +154,17 @@ func getKeyIndicesExceptPrimaryByTag(fields []ast.Field, tag ast.FieldTag) []int
 	return indices
 }
 
-func getBytes(strs ...interface{}) []byte {
-	var bytes []byte
-	for _, str := range strs {
-		switch str.(type) {
-		case string:
-			bytes = append(bytes, []byte(str.(string))...)
-		case []byte:
-			bytes = append(bytes, str.([]byte)...)
-		case byte:
-			bytes = append(bytes, str.(byte))
-		case rune:
-			bytes = append(bytes, byte(str.(rune)))
-		}
+func (txn *Txn) getFields(tableName string) ([]ast.Field, error) {
+	fieldBytes, err := txn.getKv([]byte(tablePrefix + tableName))
+	if err != nil {
+		return nil, err
 	}
-	return bytes
+	var fields []ast.Field
+	err = msgpackUnmarshal(fieldBytes, &fields)
+	if err != nil {
+		return nil, err
+	}
+	return fields, nil
 }
 
 // Table Metadata Structure:
@@ -211,6 +182,18 @@ func (txn *Txn) createTable(stmt ast.CreateTableStmt) *rpc.ResultSet {
 		}
 	}
 
+	fieldNameMap := make(map[string]bool)
+	for _, f := range stmt.Fields {
+		if _, ok := fieldNameMap[f.FieldName]; ok {
+			return &rpc.ResultSet{
+				Message:  "Duplicate column name",
+				FailFlag: true,
+			}
+		} else {
+			fieldNameMap[f.FieldName] = true
+		}
+	}
+
 	if getPrimaryKeyIndex(stmt.Fields) == multiplePrimaryKey {
 		return &rpc.ResultSet{
 			Message:  "Multiple primary key defined",
@@ -218,7 +201,7 @@ func (txn *Txn) createTable(stmt ast.CreateTableStmt) *rpc.ResultSet {
 		}
 	}
 
-	tableMetadataKey := getBytes(tablePrefix, stmt.TableName)
+	tableMetadataKey := concatBytes(tablePrefix, stmt.TableName)
 	exist, err := txn.isKeyExists(tableMetadataKey)
 	if err != nil {
 		return internalErrorMessage
@@ -248,7 +231,7 @@ func (txn *Txn) createTable(stmt ast.CreateTableStmt) *rpc.ResultSet {
 //   Value: ...
 func (txn *Txn) dropTable(stmt ast.DropTableStmt) *rpc.ResultSet {
 	start := time.Now()
-	tableMetadataKey := getBytes(tablePrefix, stmt.TableName)
+	tableMetadataKey := concatBytes(tablePrefix, stmt.TableName)
 	exist, err := txn.isKeyExists(tableMetadataKey)
 	if err != nil {
 		return internalErrorMessage
@@ -263,7 +246,7 @@ func (txn *Txn) dropTable(stmt ast.DropTableStmt) *rpc.ResultSet {
 		return internalErrorMessage
 	}
 
-	primaryNumberKey := getBytes(tablePrimaryNumberPrefix, stmt.TableName)
+	primaryNumberKey := concatBytes(tablePrimaryNumberPrefix, stmt.TableName)
 	exist, err = txn.isKeyExists(primaryNumberKey)
 	if err != nil {
 		return internalErrorMessage
@@ -357,42 +340,16 @@ func (txn *Txn) show(stmt ast.ShowStmt) *rpc.ResultSet {
 	}
 }
 
-func uint64ToBytesBE(val uint64) []byte {
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, val)
-	return buf
-}
-
 type pendingWrite struct {
 	key []byte
 	val []byte
 }
 
-func i64ToU64(i int64) uint64 {
-	var u uint64
-	if i >= 0 {
-		u = uint64(i) + math.MaxInt64 + 1
-	} else {
-		u = uint64(i + math.MaxInt64 + 1)
-	}
-	return u
-}
-
-func u64ToI64(u uint64) int64 {
-	var i int64
-	if u <= math.MaxInt64 {
-		i = int64(u) - math.MaxInt64 - 1
-	} else {
-		i = int64(u - math.MaxInt64 - 1)
-	}
-	return i
-}
-
+// TODO: code clean up & add comments
 func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 	start := time.Now()
 
-	tableMetadataKey := getBytes(tablePrefix, stmt.TableName)
-	exist, err := txn.isKeyExists(tableMetadataKey)
+	exist, err := txn.isKeyExists(concatBytes(tablePrefix, stmt.TableName))
 	if err != nil {
 		return internalErrorMessage
 	} else if !exist {
@@ -402,12 +359,7 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 		}
 	}
 
-	fieldBytes, err := txn.getKv(tableMetadataKey)
-	if err != nil {
-		return internalErrorMessage
-	}
-	var fields []ast.Field
-	err = msgpackUnmarshal(fieldBytes, &fields)
+	fields, err := txn.getFields(stmt.TableName)
 	if err != nil {
 		return internalErrorMessage
 	}
@@ -429,22 +381,17 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 		if err != nil {
 			return internalErrorMessage
 		}
-		primaryKeyPart = uint64ToBytesBE(next)
+		primaryKeyPart = packUint64(next)
 	} else {
-		switch v := stmt.Values[primaryIndex]; v.(type) {
-		case string:
-			primaryKeyPart = []byte(v.(string))
-		case int64:
-			primaryKeyPart = uint64ToBytesBE(i64ToU64(v.(int64)))
-		}
+		primaryKeyPart = getValueBytes(stmt.Values[primaryIndex])
 	}
-	primaryKey := getBytes(stmt.TableName, byte('@'), byte(primaryIndex), byte('@'), primaryKeyPart)
+	primaryKey := concatBytes(stmt.TableName, byte('@'), byte(primaryIndex), byte('@'), primaryKeyPart)
 	exist, err = txn.isKeyExists(primaryKey)
 	if err != nil {
 		return internalErrorMessage
 	} else if exist {
 		return &rpc.ResultSet{
-			Message:  fmt.Sprint("Duplicate entry for key 'PRIMARY'"),
+			Message:  fmt.Sprint("Duplicate entry for 'PRIMARY' key"),
 			FailFlag: true,
 		}
 	}
@@ -454,20 +401,14 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 	// Handle unique key
 	uniqueKeyIndices := getKeyIndicesExceptPrimaryByTag(fields, ast.UNIQUE)
 	for _, i := range uniqueKeyIndices {
-		var uniqueKeyPart []byte
-		switch v := stmt.Values[i]; v.(type) {
-		case string:
-			uniqueKeyPart = []byte(v.(string))
-		case int64:
-			uniqueKeyPart = uint64ToBytesBE(i64ToU64(v.(int64)))
-		}
-		uniqueKey := getBytes(stmt.TableName, byte('@'), byte(i), byte('@'), uniqueKeyPart)
+		uniqueKeyPart := getValueBytes(stmt.Values[i])
+		uniqueKey := concatBytes(stmt.TableName, byte('@'), byte(i), byte('@'), uniqueKeyPart)
 		exist, err = txn.isKeyExists(uniqueKey)
 		if err != nil {
 			return internalErrorMessage
 		} else if exist {
 			return &rpc.ResultSet{
-				Message:  fmt.Sprint("Duplicate entry for key 'UNIQUE'"),
+				Message:  fmt.Sprint("Duplicate entry for 'UNIQUE' key"),
 				FailFlag: true,
 			}
 		}
@@ -477,17 +418,8 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 	// Handle index key
 	indexKeyIndices := getKeyIndicesExceptPrimaryByTag(fields, ast.INDEX)
 	for _, i := range indexKeyIndices {
-		var indexKeyPart []byte
-		switch v := stmt.Values[i]; v.(type) {
-		case string:
-			indexKeyPart = []byte(v.(string))
-		case int64:
-			indexKeyPart = uint64ToBytesBE(i64ToU64(v.(int64)))
-		}
-		indexKeyPart = append(indexKeyPart, byte('@'))
-		indexKeyPart = append(indexKeyPart, primaryKeyPart...)
-
-		indexKey := getBytes(stmt.TableName, byte('@'), byte(i), byte('@'), indexKeyPart)
+		indexKeyPart := concatBytes(getValueBytes(stmt.Values[i]), byte('@'), primaryKeyPart)
+		indexKey := concatBytes(stmt.TableName, byte('@'), byte(i), byte('@'), indexKeyPart)
 		pendingWrites = append(pendingWrites, pendingWrite{key: indexKey, val: []byte{}})
 	}
 
@@ -502,3 +434,119 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 		Message: fmt.Sprintf(queryOkPattern, 1, time.Since(start).Seconds()),
 	}
 }
+
+func (txn *Txn) sel(stmt ast.SelectStmt) *rpc.ResultSet {
+	start := time.Now()
+	exist, err := txn.isKeyExists([]byte(tablePrefix + stmt.TableName))
+	if err != nil {
+		return internalErrorMessage
+	} else if !exist {
+		return &rpc.ResultSet{
+			Message:  fmt.Sprintf(tableNotExistPattern, stmt.TableName),
+			FailFlag: true,
+		}
+	}
+
+	var fieldIndices []int
+	fields, err := txn.getFields(stmt.TableName)
+outer:
+	for _, fieldName := range stmt.FieldNames {
+		if fieldName == "*" {
+			for i := 0; i < len(fields); i++ {
+				fieldIndices = append(fieldIndices, i)
+			}
+		} else {
+			for i, realField := range fields {
+				if realField.FieldName == fieldName {
+					fieldIndices = append(fieldIndices, i)
+					continue outer
+				}
+			}
+			return &rpc.ResultSet{
+				Message:  "Unknown column",
+				FailFlag: true,
+			}
+		}
+	}
+
+	header := &rpc.Row{}
+	for _, i := range fieldIndices {
+		header.Fields = append(header.Fields, &rpc.Value{Val: &rpc.Value_StrVal{StrVal: fields[i].FieldName}})
+	}
+	var results rpc.ResultSet
+	results.Table = append(results.Table, header)
+
+	pIt, err := newPlanIterator(txn, stmt.TableName, stmt.Where)
+	switch err {
+	case nil:
+	case errInvalidField:
+		return &rpc.ResultSet{
+			Message:  "Unknown column",
+			FailFlag: true,
+		}
+	case errFieldTypeMismatch:
+		return &rpc.ResultSet{
+			Message:  "Column type mismatch",
+			FailFlag: true,
+		}
+	default:
+		return internalErrorMessage
+	}
+	defer pIt.close()
+
+	for pIt.valid() {
+		tuple, err := pIt.value()
+		if err != nil {
+			return internalErrorMessage
+		}
+
+		row := &rpc.Row{}
+		var val *rpc.Value
+		for _, i := range fieldIndices {
+			switch fields[i].FieldType {
+			case ast.INT:
+				val = &rpc.Value{Val: &rpc.Value_IntVal{IntVal: tuple[i].(int64)}}
+			case ast.STRING:
+				val = &rpc.Value{Val: &rpc.Value_StrVal{StrVal: tuple[i].(string)}}
+			}
+			row.Fields = append(row.Fields, val)
+		}
+		results.Table = append(results.Table, row)
+		pIt.next()
+	}
+	if resultCnt := len(results.Table) - 1; resultCnt == 0 {
+		results.Table = nil
+		results.Message = fmt.Sprintf(emptySetPattern, time.Since(start).Seconds())
+	} else {
+		results.Message = fmt.Sprintf(rowsInSetPattern, len(results.Table)-1, time.Since(start).Seconds())
+	}
+	return &results
+}
+
+//func (txn *Txn) upd(stmt ast.UpdateStmt) *rpc.ResultSet {
+//	start := time.Now()
+//	exist, err := txn.isKeyExists([]byte(tablePrefix + stmt.TableName))
+//	if err != nil {
+//		return internalErrorMessage
+//	} else if !exist {
+//		return &rpc.ResultSet{
+//			Message:  fmt.Sprintf(tableNotExistPattern, stmt.TableName),
+//			FailFlag: true,
+//		}
+//	}
+//	pIt, tag := newPlanIterator(txn, stmt.TableName, stmt.Where)
+//}
+//
+//func (txn *Txn) del(stmt ast.DeleteStmt) *rpc.ResultSet {
+//	start := time.Now()
+//	exist, err := txn.isKeyExists([]byte(tablePrefix + stmt.TableName))
+//	if err != nil {
+//		return internalErrorMessage
+//	} else if !exist {
+//		return &rpc.ResultSet{
+//			Message:  fmt.Sprintf(tableNotExistPattern, stmt.TableName),
+//			FailFlag: true,
+//		}
+//	}
+//	pIt, tag := newPlanIterator(txn, stmt.TableName, stmt.Where)
+//}

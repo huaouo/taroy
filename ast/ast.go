@@ -7,11 +7,13 @@ package ast
 type FieldType int
 
 const (
-	INT FieldType = iota
+	NIL FieldType = iota
+	INT
 	STRING
 )
 
 var fieldTypeNames = map[FieldType]string{
+	NIL:    "NIL",
 	INT:    "INT",
 	STRING: "STRING",
 }
@@ -30,7 +32,7 @@ const (
 )
 
 var fieldTagNames = map[FieldTag]string{
-	UNTAGGED: "",
+	UNTAGGED: "UNTAGGED",
 	PRIMARY:  "PRIMARY",
 	UNIQUE:   "UNIQUE",
 	INDEX:    "INDEX",

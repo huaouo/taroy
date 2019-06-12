@@ -11,6 +11,7 @@ import (
 	"github.com/huaouo/taroy/rpc"
 	"github.com/olekukonko/tablewriter"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -41,7 +42,7 @@ func printTable(outFile *os.File, table []*rpc.Row) {
 	for _, v := range table[0].Fields {
 		switch v.Val.(type) {
 		case *rpc.Value_IntVal:
-			head = append(head, string(v.Val.(*rpc.Value_IntVal).IntVal))
+			head = append(head, strconv.FormatInt(v.Val.(*rpc.Value_IntVal).IntVal, 10))
 		case *rpc.Value_StrVal:
 			head = append(head, string(v.Val.(*rpc.Value_StrVal).StrVal))
 		}
@@ -53,7 +54,7 @@ func printTable(outFile *os.File, table []*rpc.Row) {
 		for _, v := range table[i].Fields {
 			switch v.Val.(type) {
 			case *rpc.Value_IntVal:
-				line = append(line, string(v.Val.(*rpc.Value_IntVal).IntVal))
+				line = append(line, strconv.FormatInt(v.Val.(*rpc.Value_IntVal).IntVal, 10))
 			case *rpc.Value_StrVal:
 				line = append(line, string(v.Val.(*rpc.Value_StrVal).StrVal))
 			}

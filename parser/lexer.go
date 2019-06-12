@@ -63,17 +63,31 @@ func (l *lexer) unread() {
 	_ = l.r.UnreadRune()
 }
 
-func (l *lexer) scanIntLiteral() (token, string) {
-	buf := new(bytes.Buffer)
+func (l *lexer) scanIntLiteral() (token, string, error) {
+	symbolPrefix := false
+	hasDigit := false
 
+	buf := new(bytes.Buffer)
 	ch := l.read()
+	if ch == '+' || ch == '-' {
+		symbolPrefix = true
+	} else if isDigit(ch) {
+		hasDigit = true
+	}
+	buf.WriteRune(ch)
+
+	ch = l.read()
 	for isDigit(ch) {
+		hasDigit = true
 		buf.WriteRune(ch)
 		ch = l.read()
 	}
 	l.unread()
 
-	return intLiteral, buf.String()
+	if symbolPrefix && !hasDigit {
+		return illegal, "", InvalidSymbol
+	}
+	return intLiteral, buf.String(), nil
 }
 
 func (l *lexer) getEscapedRune() (rune, error) {
@@ -222,9 +236,9 @@ func (l *lexer) nextToken() (token, string, error) {
 	case ch == eofRune:
 		l.err = EOF
 		return illegal, "", EOF
-	case isDigit(ch):
-		digit, str := l.scanIntLiteral()
-		return digit, str, nil
+	case isDigit(ch) || ch == '+' || ch == '-':
+		digit, str, err := l.scanIntLiteral()
+		return digit, str, err
 	case ch == '"':
 		return l.scanStringLiteral()
 	case ch == '_' || isLetter(ch):

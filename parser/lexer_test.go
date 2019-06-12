@@ -194,3 +194,20 @@ func TestInvalidEscapeCharacterLexer(t *testing.T) {
 	_, _, err := l.nextToken()
 	assert.Equal(t, InvalidEscapeCharacter, err)
 }
+
+func TestIntLiterals(t *testing.T) {
+	expectedTokens := []tokenPair{
+		{intLiteral, "-2"},
+		{intLiteral, "+2"},
+		{intLiteral, "2"},
+	}
+	testLegalLexer(t, "-2 +2 2", expectedTokens)
+
+	l := newLexer("+")
+	_, _, err := l.nextToken()
+	assert.Equal(t, InvalidSymbol, err)
+
+	l = newLexer("-")
+	_, _, err = l.nextToken()
+	assert.Equal(t, InvalidSymbol, err)
+}

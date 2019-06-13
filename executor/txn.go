@@ -29,8 +29,8 @@ const (
 )
 
 var internalError = errors.New("internal error")
-var internalErrorMessage = &rpc.ResultSet{
-	Message:  "Internal error",
+var InternalErrorMessage = &rpc.ResultSet{
+	Message:  "Internal error, all changes within this transaction have been discarded",
 	FailFlag: true,
 }
 
@@ -99,14 +99,14 @@ func (txn *Txn) Execute(stmt interface{}) *rpc.ResultSet {
 		return txn.insert(stmt.(ast.InsertStmt))
 	case ast.SelectStmt:
 		return txn.sel(stmt.(ast.SelectStmt))
-		//case ast.DeleteStmt:
-		//	return txn.del(stmt.(ast.DeleteStmt))
+	case ast.DeleteStmt:
+		return txn.del(stmt.(ast.DeleteStmt))
 		//case ast.UpdateStmt:
 		//	return txn.upd(stmt.(ast.UpdateStmt))
 	}
 
 	log.Println("Plan not implemented")
-	return internalErrorMessage
+	return InternalErrorMessage
 }
 
 func (txn *Txn) Rollback() {
@@ -204,7 +204,7 @@ func (txn *Txn) createTable(stmt ast.CreateTableStmt) *rpc.ResultSet {
 	tableMetadataKey := concatBytes(tablePrefix, stmt.TableName)
 	exist, err := txn.isKeyExists(tableMetadataKey)
 	if err != nil {
-		return internalErrorMessage
+		return InternalErrorMessage
 	} else if exist {
 		return &rpc.ResultSet{
 			Message:  fmt.Sprintf("Table '%s' already exists", stmt.TableName),
@@ -214,11 +214,11 @@ func (txn *Txn) createTable(stmt ast.CreateTableStmt) *rpc.ResultSet {
 
 	fieldBytes, err := msgpackMarshal(stmt.Fields)
 	if err != nil {
-		return internalErrorMessage
+		return InternalErrorMessage
 	}
 	err = txn.setKv(tableMetadataKey, fieldBytes)
 	if err != nil {
-		return internalErrorMessage
+		return InternalErrorMessage
 	}
 	return &rpc.ResultSet{
 		Message: fmt.Sprintf(queryOkPattern, 0, time.Since(start).Seconds()),
@@ -234,7 +234,7 @@ func (txn *Txn) dropTable(stmt ast.DropTableStmt) *rpc.ResultSet {
 	tableMetadataKey := concatBytes(tablePrefix, stmt.TableName)
 	exist, err := txn.isKeyExists(tableMetadataKey)
 	if err != nil {
-		return internalErrorMessage
+		return InternalErrorMessage
 	} else if !exist {
 		return &rpc.ResultSet{
 			Message:  fmt.Sprintf(tableNotExistPattern, stmt.TableName),
@@ -243,17 +243,17 @@ func (txn *Txn) dropTable(stmt ast.DropTableStmt) *rpc.ResultSet {
 	}
 	err = txn.deleteKv(tableMetadataKey)
 	if err != nil {
-		return internalErrorMessage
+		return InternalErrorMessage
 	}
 
 	primaryNumberKey := concatBytes(tablePrimaryNumberPrefix, stmt.TableName)
 	exist, err = txn.isKeyExists(primaryNumberKey)
 	if err != nil {
-		return internalErrorMessage
+		return InternalErrorMessage
 	} else if exist {
 		err = txn.deleteKv(primaryNumberKey)
 		if err != nil {
-			return internalErrorMessage
+			return InternalErrorMessage
 		}
 	}
 
@@ -264,7 +264,7 @@ func (txn *Txn) dropTable(stmt ast.DropTableStmt) *rpc.ResultSet {
 		k := it.Item().Key()
 		err := txn.deleteKv(k)
 		if err != nil {
-			return internalErrorMessage
+			return InternalErrorMessage
 		}
 	}
 	return &rpc.ResultSet{
@@ -319,12 +319,12 @@ func (txn *Txn) show(stmt ast.ShowStmt) *rpc.ResultSet {
 			}})
 		fieldBytes, err := it.Item().Value()
 		if err != nil {
-			return internalErrorMessage
+			return InternalErrorMessage
 		}
 		var fields []ast.Field
 		err = msgpackUnmarshal(fieldBytes, &fields)
 		if err != nil {
-			return internalErrorMessage
+			return InternalErrorMessage
 		}
 
 		for _, f := range fields {
@@ -351,7 +351,7 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 
 	exist, err := txn.isKeyExists(concatBytes(tablePrefix, stmt.TableName))
 	if err != nil {
-		return internalErrorMessage
+		return InternalErrorMessage
 	} else if !exist {
 		return &rpc.ResultSet{
 			Message:  fmt.Sprintf(tableNotExistPattern, stmt.TableName),
@@ -361,7 +361,7 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 
 	fields, err := txn.getFields(stmt.TableName)
 	if err != nil {
-		return internalErrorMessage
+		return InternalErrorMessage
 	}
 	if len(fields) != len(stmt.Values) {
 		return &rpc.ResultSet{
@@ -379,7 +379,7 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 		primarySeq := getSeq(tablePrimaryNumberPrefix + stmt.TableName)
 		next, err := primarySeq.getNext()
 		if err != nil {
-			return internalErrorMessage
+			return InternalErrorMessage
 		}
 		primaryKeyPart = packUint64(next)
 	} else {
@@ -388,7 +388,7 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 	primaryKey := concatBytes(stmt.TableName, byte('@'), byte(primaryIndex), byte('@'), primaryKeyPart)
 	exist, err = txn.isKeyExists(primaryKey)
 	if err != nil {
-		return internalErrorMessage
+		return InternalErrorMessage
 	} else if exist {
 		return &rpc.ResultSet{
 			Message:  fmt.Sprint("Duplicate entry for 'PRIMARY' key"),
@@ -405,7 +405,7 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 		uniqueKey := concatBytes(stmt.TableName, byte('@'), byte(i), byte('@'), uniqueKeyPart)
 		exist, err = txn.isKeyExists(uniqueKey)
 		if err != nil {
-			return internalErrorMessage
+			return InternalErrorMessage
 		} else if exist {
 			return &rpc.ResultSet{
 				Message:  fmt.Sprint("Duplicate entry for 'UNIQUE' key"),
@@ -426,7 +426,7 @@ func (txn *Txn) insert(stmt ast.InsertStmt) *rpc.ResultSet {
 	for _, w := range pendingWrites {
 		err := txn.setKv(w.key, w.val)
 		if err != nil {
-			return internalErrorMessage
+			return InternalErrorMessage
 		}
 	}
 
@@ -439,7 +439,7 @@ func (txn *Txn) sel(stmt ast.SelectStmt) *rpc.ResultSet {
 	start := time.Now()
 	exist, err := txn.isKeyExists([]byte(tablePrefix + stmt.TableName))
 	if err != nil {
-		return internalErrorMessage
+		return InternalErrorMessage
 	} else if !exist {
 		return &rpc.ResultSet{
 			Message:  fmt.Sprintf(tableNotExistPattern, stmt.TableName),
@@ -450,7 +450,7 @@ func (txn *Txn) sel(stmt ast.SelectStmt) *rpc.ResultSet {
 	var fieldIndices []int
 	fields, err := txn.getFields(stmt.TableName)
 	if err != nil {
-		return internalErrorMessage
+		return InternalErrorMessage
 	}
 outer:
 	for _, fieldName := range stmt.FieldNames {
@@ -493,14 +493,14 @@ outer:
 			FailFlag: true,
 		}
 	default:
-		return internalErrorMessage
+		return InternalErrorMessage
 	}
 	defer pIt.close()
 
 	for pIt.valid() {
 		tuple, err := pIt.value()
 		if err != nil {
-			return internalErrorMessage
+			return InternalErrorMessage
 		}
 
 		row := &rpc.Row{}
@@ -530,26 +530,116 @@ outer:
 //	start := time.Now()
 //	exist, err := txn.isKeyExists([]byte(tablePrefix + stmt.TableName))
 //	if err != nil {
-//		return internalErrorMessage
+//		return InternalErrorMessage
 //	} else if !exist {
 //		return &rpc.ResultSet{
 //			Message:  fmt.Sprintf(tableNotExistPattern, stmt.TableName),
 //			FailFlag: true,
 //		}
 //	}
-//	pIt, tag := newPlanIterator(txn, stmt.TableName, stmt.Where)
-//}
 //
-//func (txn *Txn) del(stmt ast.DeleteStmt) *rpc.ResultSet {
-//	start := time.Now()
-//	exist, err := txn.isKeyExists([]byte(tablePrefix + stmt.TableName))
-//	if err != nil {
-//		return internalErrorMessage
-//	} else if !exist {
+//	fields, err := txn.getFields(stmt.TableName)
+//	updateMap := make(map[int]interface{})
+//nextPair:
+//	for _, p := range stmt.UpdatePairs {
+//		for i, f := range fields {
+//			if p.FieldName == f.FieldName {
+//				if getValueType(p.Value) != f.FieldType {
+//					return &rpc.ResultSet{
+//						Message:  "Unknown type mismatch in field list",
+//						FailFlag: true,
+//					}
+//				}
+//				updateMap[i] = p.Value
+//				continue nextPair
+//			}
+//		}
 //		return &rpc.ResultSet{
-//			Message:  fmt.Sprintf(tableNotExistPattern, stmt.TableName),
+//			Message:  "Unknown column in field list",
 //			FailFlag: true,
 //		}
 //	}
-//	pIt, tag := newPlanIterator(txn, stmt.TableName, stmt.Where)
+//	pIt, err := newPlanIterator(txn, stmt.TableName, stmt.Where)
+//	switch err {
+//	case nil:
+//	case errInvalidField:
+//		return &rpc.ResultSet{
+//			Message:  "Unknown column",
+//			FailFlag: true,
+//		}
+//	case errFieldTypeMismatch:
+//		return &rpc.ResultSet{
+//			Message:  "Column type mismatch",
+//			FailFlag: true,
+//		}
+//	default:
+//		return InternalErrorMessage
+//	}
+//	defer pIt.close()
+//
+//	updateCnt := 0
+//	for pIt.valid() {
+//		tuple, err := pIt.value()
+//		if err != nil {
+//			return InternalErrorMessage
+//		}
+//		for i := 0; i < len(tuple); i++ {
+//			if v, ok := updateMap[i]; ok {
+//				tuple[i] = v
+//			}
+//		}
+//		err = pIt.update(tuple)
+//		if err != nil {
+//			return InternalErrorMessage
+//		}
+//		pIt.next()
+//		updateCnt++
+//	}
+//	return &rpc.ResultSet{
+//		Message: fmt.Sprintf(queryOkPattern, updateCnt, time.Since(start).Seconds()),
+//	}
 //}
+
+func (txn *Txn) del(stmt ast.DeleteStmt) *rpc.ResultSet {
+	start := time.Now()
+	exist, err := txn.isKeyExists([]byte(tablePrefix + stmt.TableName))
+	if err != nil {
+		return InternalErrorMessage
+	} else if !exist {
+		return &rpc.ResultSet{
+			Message:  fmt.Sprintf(tableNotExistPattern, stmt.TableName),
+			FailFlag: true,
+		}
+	}
+
+	pIt, err := newPlanIterator(txn, stmt.TableName, stmt.Where)
+	switch err {
+	case nil:
+	case errInvalidField:
+		return &rpc.ResultSet{
+			Message:  "Unknown column",
+			FailFlag: true,
+		}
+	case errFieldTypeMismatch:
+		return &rpc.ResultSet{
+			Message:  "Column type mismatch",
+			FailFlag: true,
+		}
+	default:
+		return InternalErrorMessage
+	}
+	defer pIt.close()
+
+	deleteCnt := 0
+	for pIt.valid() {
+		err := pIt.delete()
+		if err != nil {
+			return InternalErrorMessage
+		}
+		deleteCnt++
+		pIt.next()
+	}
+	return &rpc.ResultSet{
+		Message: fmt.Sprintf(queryOkPattern, deleteCnt, time.Since(start).Seconds()),
+	}
+}

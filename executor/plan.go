@@ -25,6 +25,7 @@ type planIterator struct {
 	tableName     string
 	fieldIndex    int
 	primaryIndex  int
+	fields        []ast.Field
 	prefix        []byte
 	valueBytes    []byte
 	valueOptBytes []byte
@@ -52,6 +53,7 @@ func newPlanIterator(txn *Txn, tableName string, where *ast.WhereClause) (*planI
 			tag:          ast.PRIMARY,
 			tableName:    tableName,
 			primaryIndex: primaryIndex,
+			fields:       fields,
 			prefix:       prefix,
 		}, nil
 	}
@@ -98,11 +100,11 @@ func newPlanIterator(txn *Txn, tableName string, where *ast.WhereClause) (*planI
 			if kvIt.Valid() {
 				if field.FieldTag == ast.INDEX {
 					targetValueBytes := extractIndexKey(extractPartKey(kvIt.Item().Key()))
-					if bytes.Compare(targetValueBytes, valueBytes) == 0 {
+					if bytes.Equal(targetValueBytes, valueBytes) {
 						kvIt.Next()
 					}
 				} else {
-					if bytes.Compare(kvIt.Item().Key(), exPrefix) == 0 {
+					if bytes.Equal(kvIt.Item().Key(), exPrefix) {
 						kvIt.Next()
 					}
 				}
@@ -120,6 +122,7 @@ func newPlanIterator(txn *Txn, tableName string, where *ast.WhereClause) (*planI
 		tableName:     tableName,
 		fieldIndex:    fieldIndex,
 		primaryIndex:  primaryIndex,
+		fields:        fields,
 		prefix:        prefix,
 		valueBytes:    valueBytes,
 		valueOptBytes: valueOptBytes,
@@ -271,12 +274,52 @@ func (pIt *planIterator) value() ([]interface{}, error) {
 	return tuple, nil
 }
 
-func (pIt *planIterator) update(tuple []interface{}) {
+//func (pIt *planIterator) update(tuple []interface{}) error {
+//	fields := pIt.fields
+//	tupleBytes, _ := msgpackMarshal(tuple)
+//	curKey := pIt.kvIt.Item().Key()
+//	switch pIt. {
+//
+//	}
+//}
 
-}
+func (pIt *planIterator) delete() error {
+	var primaryPartKey []byte
+	switch pIt.tag {
+	case ast.PRIMARY, ast.UNTAGGED:
+		primaryPartKey = extractPartKey(pIt.kvIt.Item().Key())
+	case ast.UNIQUE:
+		var err error
+		primaryPartKey, err = pIt.kvIt.Item().Value()
+		if err != nil {
+			return err
+		}
+	case ast.INDEX:
+		primaryPartKey = extractIndexKey(extractPartKey(pIt.kvIt.Item().Key()))
+	}
+	tuple, err := pIt.value()
+	if err != nil {
+		return err
+	}
+	fields := pIt.fields
 
-func (pIt *planIterator) delete() {
+	for i, f := range fields {
+		var err error
+		switch f.FieldTag {
+		case ast.UNIQUE:
+			err = pIt.txn.deleteKv(concatBytes(pIt.tableName, byte('@'),
+				byte(i), byte('@'), getValueBytes(tuple[i])))
+		case ast.INDEX:
+			err = pIt.txn.deleteKv(concatBytes(pIt.tableName, byte('@'),
+				byte(i), byte('@'), getValueBytes(tuple[i]), byte('@'), primaryPartKey))
+		}
+		if err != nil {
+			return err
+		}
+	}
 
+	return pIt.txn.deleteKv(concatBytes(pIt.tableName, byte('@'),
+		byte(pIt.primaryIndex), byte('@'), primaryPartKey))
 }
 
 func (pIt *planIterator) next() {

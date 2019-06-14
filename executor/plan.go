@@ -15,20 +15,24 @@ var (
 	errInvalidField        = errors.New("invalid field")
 	errFieldTypeMismatch   = errors.New("field type mismatch")
 	errInvalidPlanIterator = errors.New("invalid plan iterator")
+	errDuplicatePrimaryKey = errors.New("duplicate primary key")
+	errDuplicateUniqueKey  = errors.New("duplicate unique key")
 )
 
 type planIterator struct {
-	kvIt          *badger.Iterator
-	txn           *Txn
-	tag           ast.FieldTag
-	cmpOp         ast.CmpOp
-	tableName     string
-	fieldIndex    int
-	primaryIndex  int
-	fields        []ast.Field
-	prefix        []byte
-	valueBytes    []byte
-	valueOptBytes []byte
+	kvIt           *badger.Iterator
+	txn            *Txn
+	tag            ast.FieldTag
+	cmpOp          ast.CmpOp
+	tableName      string
+	fieldIndex     int
+	primaryIndex   int
+	prefix         []byte
+	valueBytes     []byte
+	valueOptBytes  []byte
+	fields         []ast.Field
+	pendingDeletes map[string]bool
+	pendingWrites  map[string]string
 }
 
 func newPlanIterator(txn *Txn, tableName string, where *ast.WhereClause) (*planIterator, error) {
@@ -48,13 +52,15 @@ func newPlanIterator(txn *Txn, tableName string, where *ast.WhereClause) (*planI
 		prefix := concatBytes(tableName, byte('@'), byte(primaryIndex), byte('@'))
 		kvIt.Seek(prefix)
 		return &planIterator{
-			kvIt:         kvIt,
-			txn:          txn,
-			tag:          ast.PRIMARY,
-			tableName:    tableName,
-			primaryIndex: primaryIndex,
-			fields:       fields,
-			prefix:       prefix,
+			kvIt:           kvIt,
+			txn:            txn,
+			tag:            ast.PRIMARY,
+			tableName:      tableName,
+			primaryIndex:   primaryIndex,
+			fields:         fields,
+			prefix:         prefix,
+			pendingDeletes: make(map[string]bool),
+			pendingWrites:  make(map[string]string),
 		}, nil
 	}
 
@@ -115,17 +121,19 @@ func newPlanIterator(txn *Txn, tableName string, where *ast.WhereClause) (*planI
 	}
 
 	return &planIterator{
-		kvIt:          kvIt,
-		txn:           txn,
-		tag:           field.FieldTag,
-		cmpOp:         where.CmpOp,
-		tableName:     tableName,
-		fieldIndex:    fieldIndex,
-		primaryIndex:  primaryIndex,
-		fields:        fields,
-		prefix:        prefix,
-		valueBytes:    valueBytes,
-		valueOptBytes: valueOptBytes,
+		kvIt:           kvIt,
+		txn:            txn,
+		tag:            field.FieldTag,
+		cmpOp:          where.CmpOp,
+		tableName:      tableName,
+		fieldIndex:     fieldIndex,
+		primaryIndex:   primaryIndex,
+		fields:         fields,
+		prefix:         prefix,
+		valueBytes:     valueBytes,
+		valueOptBytes:  valueOptBytes,
+		pendingDeletes: make(map[string]bool),
+		pendingWrites:  make(map[string]string),
 	}, nil
 }
 
@@ -274,14 +282,112 @@ func (pIt *planIterator) value() ([]interface{}, error) {
 	return tuple, nil
 }
 
-//func (pIt *planIterator) update(tuple []interface{}) error {
-//	fields := pIt.fields
-//	tupleBytes, _ := msgpackMarshal(tuple)
-//	curKey := pIt.kvIt.Item().Key()
-//	switch pIt. {
-//
-//	}
-//}
+func (pIt *planIterator) update(tuple []interface{}) error {
+	curTuple, err := pIt.value()
+	if err != nil {
+		return err
+	}
+	tupleBytes, err := msgpackMarshal(tuple)
+	if err != nil {
+		return err
+	}
+	var (
+		primaryPartKey    []byte
+		curPrimaryPartKey []byte
+	)
+	if pIt.primaryIndex == 255 {
+		switch pIt.tag {
+		case ast.PRIMARY, ast.UNTAGGED:
+			primaryPartKey = extractPartKey(pIt.kvIt.Item().Key())
+		case ast.UNIQUE:
+			var err error
+			primaryPartKey, err = pIt.kvIt.Item().Value()
+			if err != nil {
+				return err
+			}
+		case ast.INDEX:
+			primaryPartKey = extractIndexValue(extractPartKey(pIt.kvIt.Item().Key()))
+		}
+		curPrimaryPartKey = primaryPartKey
+
+		writeKey := concatBytes(pIt.tableName, byte('@'), byte(255), byte('@'), primaryPartKey)
+		if _, ok := pIt.pendingWrites[string(writeKey)]; ok {
+			return errDuplicatePrimaryKey
+		}
+		pIt.pendingWrites[string(writeKey)] = string(tupleBytes)
+	} else {
+		i := pIt.primaryIndex
+		curPrimaryPartKey = getValueBytes(curTuple[i])
+		primaryPartKey = getValueBytes(tuple[i])
+
+		primaryKey := concatBytes(pIt.tableName, byte('@'), byte(i),
+			byte('@'), primaryPartKey)
+		if exist, err := pIt.txn.isKeyExists(primaryKey); err != nil {
+			return err
+		} else if exist && tuple[i] != curTuple[i] {
+			return errDuplicatePrimaryKey
+		}
+
+		deleteKey := concatBytes(pIt.tableName, byte('@'), byte(i), byte('@'),
+			curPrimaryPartKey)
+		pIt.pendingDeletes[string(deleteKey)] = true
+
+		if _, ok := pIt.pendingWrites[string(primaryKey)]; ok {
+			return errDuplicatePrimaryKey
+		}
+		pIt.pendingWrites[string(primaryKey)] = string(tupleBytes)
+	}
+
+	for i, f := range pIt.fields {
+		//if tuple[i] != curTuple[i] {
+		switch f.FieldTag {
+		case ast.UNIQUE:
+			uniqueKey := concatBytes(pIt.tableName, byte('@'), byte(i), byte('@'),
+				getValueBytes(tuple[i]))
+			if exist, err := pIt.txn.isKeyExists(uniqueKey); err != nil {
+				return err
+			} else if exist && tuple[i] != curTuple[i] {
+				return errDuplicateUniqueKey
+			}
+			deleteKey := concatBytes(pIt.tableName, byte('@'), byte(i), byte('@'),
+				getValueBytes(curTuple[i]))
+			pIt.pendingDeletes[string(deleteKey)] = true
+			if _, ok := pIt.pendingWrites[string(uniqueKey)]; ok {
+				return errDuplicateUniqueKey
+			}
+			pIt.pendingWrites[string(uniqueKey)] = string(primaryPartKey)
+		case ast.INDEX:
+			deleteKey := concatBytes(pIt.tableName, byte('@'), byte(i), byte('@'),
+				getValueBytes(curTuple[i]), byte('@'), curPrimaryPartKey)
+			pIt.pendingDeletes[string(deleteKey)] = true
+			writeKey := concatBytes(pIt.pendingWrites, concatBytes(pIt.tableName,
+				byte('@'), byte(i), byte('@'), getValueBytes(tuple[i]), byte('@'),
+				primaryPartKey))
+			pIt.pendingWrites[string(writeKey)] = string([]byte{})
+		}
+		//}
+	}
+	return nil
+}
+
+func (pIt *planIterator) doUpdate() error {
+	for k, _ := range pIt.pendingDeletes {
+		err := pIt.txn.deleteKv([]byte(k))
+		if err != nil {
+			return err
+		}
+	}
+	for k, v := range pIt.pendingWrites {
+		err := pIt.txn.setKv([]byte(k), []byte(v))
+		if err != nil {
+			return err
+		}
+	}
+
+	pIt.pendingDeletes = make(map[string]bool)
+	pIt.pendingWrites = make(map[string]string)
+	return nil
+}
 
 func (pIt *planIterator) delete() error {
 	var primaryPartKey []byte

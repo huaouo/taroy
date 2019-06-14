@@ -13,7 +13,7 @@ const (
 )
 
 var fieldTypeNames = map[FieldType]string{
-	NIL:    "NIL",
+	NIL:    "",
 	INT:    "INT",
 	STRING: "STRING",
 }
@@ -32,7 +32,7 @@ const (
 )
 
 var fieldTagNames = map[FieldTag]string{
-	UNTAGGED: "UNTAGGED",
+	UNTAGGED: "",
 	PRIMARY:  "PRIMARY",
 	UNIQUE:   "UNIQUE",
 	INDEX:    "INDEX",

@@ -103,12 +103,20 @@ func (s *server) Execute(ctx context.Context, sql *rpc.RawSQL) (*rpc.ResultSet, 
 					break
 				}
 				resultSet = tmpTxn.Execute(stmt)
-				commitResult := tmpTxn.Commit()
-				if commitResult.FailFlag {
-					resultSet = commitResult
+				if resultSet == executor.InternalErrorMessage {
+					tmpTxn.Rollback()
+				} else {
+					commitResult := tmpTxn.Commit()
+					if commitResult.FailFlag {
+						resultSet = commitResult
+					}
 				}
 			} else {
 				resultSet = txn.Execute(stmt)
+				if resultSet == executor.InternalErrorMessage {
+					txn.Rollback()
+					s.txnMap.Delete(p.Addr)
+				}
 			}
 		}
 
